@@ -22,7 +22,7 @@ func SnapshotInfo(device bluetooth.Device) {
 		log.Fatal(err)
 	}
 
-	fmt.Println("Getting snapshot info...")
+	fmt.Fprintln(os.Stderr, "Getting snapshot info...")
 
 	resp, body, err := ctx.SendRequest("GET", ctx.APIPath("/xsfp/sync/start"), nil, 10*time.Second)
 	if err != nil {
@@ -30,9 +30,9 @@ func SnapshotInfo(device bluetooth.Device) {
 	}
 
 	if resp.StatusCode != 200 {
-		fmt.Printf("Error: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Error: status %d\n", resp.StatusCode)
 		if len(body) > 0 {
-			fmt.Printf("Body: %s\n", string(body))
+			fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 		}
 		return
 	}
@@ -75,9 +75,9 @@ func SnapshotRead(device bluetooth.Device, filename string) {
 
 	shortHash := store.ShortHash(hash)
 	if isNew {
-		fmt.Printf("Saved to store: %s (new)\n", shortHash)
+		fmt.Fprintf(os.Stderr, "Saved to store: %s (new)\n", shortHash)
 	} else {
-		fmt.Printf("Saved to store: %s (existing profile)\n", shortHash)
+		fmt.Fprintf(os.Stderr, "Saved to store: %s (existing profile)\n", shortHash)
 	}
 
 	// Optionally save to file
@@ -85,7 +85,7 @@ func SnapshotRead(device bluetooth.Device, filename string) {
 		if err := os.WriteFile(filename, data, 0o644); err != nil {
 			log.Fatalf("Failed to write file: %v", err)
 		}
-		fmt.Printf("Saved to file: %s\n", filename)
+		fmt.Fprintf(os.Stderr, "Saved to file: %s\n", filename)
 	}
 
 	// Display info about the data
@@ -162,21 +162,21 @@ func SnapshotWrite(device bluetooth.Device, filename string) {
 		moduleType = "QSFP"
 	}
 
-	fmt.Printf("Loaded %s EEPROM data: %d bytes from %s\n", moduleType, len(eepromData), filename)
+	fmt.Fprintf(os.Stderr, "Loaded %s EEPROM data: %d bytes from %s\n", moduleType, len(eepromData), filename)
 
 	// Parse and display what we're about to write
 	DisplayEEPROMInfo(eepromData)
 
-	fmt.Println()
-	fmt.Println("This will write to the snapshot buffer.")
-	fmt.Println("Use the device screen to apply snapshot to module.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "This will write to the snapshot buffer.")
+	fmt.Fprintln(os.Stderr, "Use the device screen to apply snapshot to module.")
 	if !ConfirmAction("Type 'yes' to continue: ") {
-		fmt.Println("Aborted.")
+		fmt.Fprintln(os.Stderr, "Aborted.")
 		return
 	}
 
 	// Step 1: POST /xsfp/sync/start with size
-	fmt.Println("\nInitializing snapshot write...")
+	fmt.Fprintln(os.Stderr, "\nInitializing snapshot write...")
 	startBody := fmt.Sprintf(`{"size":%d}`, len(eepromData))
 	resp, body, err := ctx.SendRequest("POST", ctx.APIPath("/xsfp/sync/start"), []byte(startBody), 10*time.Second)
 	if err != nil {
@@ -184,36 +184,36 @@ func SnapshotWrite(device bluetooth.Device, filename string) {
 	}
 
 	if resp.StatusCode != 200 {
-		fmt.Printf("Error initializing snapshot: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Error initializing snapshot: status %d\n", resp.StatusCode)
 		if len(body) > 0 {
-			fmt.Printf("Response: %s\n", string(body))
+			fmt.Fprintf(os.Stderr, "Response: %s\n", string(body))
 		}
 		return
 	}
 
-	fmt.Printf("Snapshot initialized: %s\n", string(body))
+	fmt.Fprintf(os.Stderr, "Snapshot initialized: %s\n", string(body))
 
 	// Step 2: POST /xsfp/sync/data with binary EEPROM data
-	fmt.Printf("Writing %d bytes to snapshot...\n", len(eepromData))
+	fmt.Fprintf(os.Stderr, "Writing %d bytes to snapshot...\n", len(eepromData))
 	resp, body, err = ctx.SendRawBodyRequest("POST", ctx.APIPath("/xsfp/sync/data"), eepromData, 30*time.Second)
 	if err != nil {
 		log.Fatalf("Failed to write snapshot data: %v", err)
 	}
 
 	if resp.StatusCode != 200 {
-		fmt.Printf("Error writing snapshot data: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Error writing snapshot data: status %d\n", resp.StatusCode)
 		if len(body) > 0 {
-			fmt.Printf("Response: %s\n", string(body))
+			fmt.Fprintf(os.Stderr, "Response: %s\n", string(body))
 		}
 		return
 	}
 
-	fmt.Printf("Snapshot write complete!\n")
+	fmt.Fprintln(os.Stderr, "Snapshot write complete!")
 	if len(body) > 0 {
 		PrintJSON(body)
 	}
 
-	fmt.Println("\nUse the device screen to apply snapshot to module.")
+	fmt.Fprintln(os.Stderr, "\nUse the device screen to apply snapshot to module.")
 }
 
 // Recover restores module EEPROM from saved "golden snapshot" in device database.
@@ -222,9 +222,9 @@ func SnapshotWrite(device bluetooth.Device, filename string) {
 func Recover(device bluetooth.Device, serialNumber string, wavelength int) {
 	ctx := ble.SetupAPI(device)
 
-	fmt.Printf("Recovering snapshot for S/N: %s\n", serialNumber)
+	fmt.Fprintf(os.Stderr, "Recovering snapshot for S/N: %s\n", serialNumber)
 	if wavelength > 0 {
-		fmt.Printf("Overriding wavelength to: %d nm\n", wavelength)
+		fmt.Fprintf(os.Stderr, "Overriding wavelength to: %d nm\n", wavelength)
 	}
 
 	// Build request body
@@ -242,18 +242,18 @@ func Recover(device bluetooth.Device, serialNumber string, wavelength int) {
 
 	switch resp.StatusCode {
 	case 200:
-		fmt.Println("Snapshot recovered successfully!")
+		fmt.Fprintln(os.Stderr, "Snapshot recovered successfully!")
 		if len(body) > 0 {
 			PrintJSON(body)
 		}
-		fmt.Println("\nUse the device screen to apply snapshot to module.")
+		fmt.Fprintln(os.Stderr, "\nUse the device screen to apply snapshot to module.")
 	case 404:
-		fmt.Printf("Error: No golden snapshot found for S/N '%s'\n", serialNumber)
-		fmt.Println("The device database does not contain a saved snapshot for this module.")
+		fmt.Fprintf(os.Stderr, "Error: No golden snapshot found for S/N '%s'\n", serialNumber)
+		fmt.Fprintln(os.Stderr, "The device database does not contain a saved snapshot for this module.")
 	default:
-		fmt.Printf("Error: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Error: status %d\n", resp.StatusCode)
 		if len(body) > 0 {
-			fmt.Printf("Body: %s\n", string(body))
+			fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 		}
 	}
 }

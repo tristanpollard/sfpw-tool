@@ -23,12 +23,12 @@ func SupportDump(device bluetooth.Device) {
 	ctx := ble.SetupAPI(device)
 
 	// Step 0: Check current SIF status and abort if in progress
-	fmt.Println("Checking SIF status...")
+	fmt.Fprintln(os.Stderr, "Checking SIF status...")
 	if err := AbortSIFIfRunning(ctx); err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println("Starting SIF read operation...")
+	fmt.Fprintln(os.Stderr, "Starting SIF read operation...")
 
 	// Step 1: POST /sif/start to initiate
 	resp, body, err := ctx.SendRequest("POST", ctx.APIPath("/sif/start"), nil, 10*time.Second)
@@ -37,8 +37,8 @@ func SupportDump(device bluetooth.Device) {
 	}
 
 	if resp.StatusCode != 200 {
-		fmt.Printf("Error starting SIF: status %d\n", resp.StatusCode)
-		fmt.Printf("Body: %s\n", string(body))
+		fmt.Fprintf(os.Stderr, "Error starting SIF: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 		return
 	}
 
@@ -52,7 +52,7 @@ func SupportDump(device bluetooth.Device) {
 		log.Fatal("Failed to parse start response:", err)
 	}
 
-	fmt.Printf("SIF started: size=%d bytes, chunk=%d\n", startResp.Size, startResp.Chunk)
+	fmt.Fprintf(os.Stderr, "SIF started: size=%d bytes, chunk=%d\n", startResp.Size, startResp.Chunk)
 
 	// Allocate buffer for full EEPROM data
 	eepromData := make([]byte, 0, startResp.Size)
@@ -66,7 +66,7 @@ func SupportDump(device bluetooth.Device) {
 			chunkSize = remaining
 		}
 
-		fmt.Printf("Reading offset %d, chunk %d...\n", offset, chunkSize)
+		fmt.Fprintf(os.Stderr, "Reading offset %d, chunk %d...\n", offset, chunkSize)
 
 		// Request body specifies what we want
 		reqBody := fmt.Sprintf(`{"status":"continue","offset":%d,"chunk":%d}`, offset, chunkSize)
@@ -78,20 +78,20 @@ func SupportDump(device bluetooth.Device) {
 		}
 
 		if resp.StatusCode != 200 {
-			fmt.Printf("Error reading SIF data: status %d\n", resp.StatusCode)
-			fmt.Printf("Body: %s\n", string(body))
+			fmt.Fprintf(os.Stderr, "Error reading SIF data: status %d\n", resp.StatusCode)
+			fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 			return
 		}
 
 		// Handle end of data - device may return 0 bytes when done
 		if len(body) == 0 {
-			fmt.Printf("  Device returned 0 bytes, read complete\n")
+			fmt.Fprintln(os.Stderr, "  Device returned 0 bytes, read complete")
 			break
 		}
 
 		eepromData = append(eepromData, body...)
 		offset += len(body)
-		fmt.Printf("  Got %d bytes (total: %d/%d)\n", len(body), offset, startResp.Size)
+		fmt.Fprintf(os.Stderr, "  Got %d bytes (total: %d/%d)\n", len(body), offset, startResp.Size)
 	}
 
 	// Step 3: GET /sif/info/ to verify completion
@@ -105,13 +105,13 @@ func SupportDump(device bluetooth.Device) {
 		Offset int    `json:"offset"`
 	}
 	if err := json.Unmarshal(body, &infoResp); err == nil {
-		fmt.Printf("SIF status: %s (offset=%d)\n", infoResp.Status, infoResp.Offset)
+		fmt.Fprintf(os.Stderr, "SIF status: %s (offset=%d)\n", infoResp.Status, infoResp.Offset)
 	}
 
-	fmt.Printf("\nReceived %d bytes (expected %d)\n", len(eepromData), startResp.Size)
+	fmt.Fprintf(os.Stderr, "\nReceived %d bytes (expected %d)\n", len(eepromData), startResp.Size)
 
 	// The SIF data is a tar archive - list contents and optionally save
-	fmt.Println("\n=== SIF Archive Contents ===")
+	fmt.Fprintln(os.Stderr, "\n=== SIF Archive Contents ===")
 	listTarContents(eepromData)
 
 	// Save to file
@@ -119,7 +119,7 @@ func SupportDump(device bluetooth.Device) {
 	if err := os.WriteFile(filename, eepromData, 0o644); err != nil {
 		log.Fatal("Failed to save file:", err)
 	}
-	fmt.Printf("\nSaved to: %s\n", filename)
+	fmt.Fprintf(os.Stderr, "\nSaved to: %s\n", filename)
 }
 
 // Logs downloads the support archive and outputs the syslog to stdout
@@ -197,7 +197,7 @@ func Logs(device bluetooth.Device) {
 		}
 	}
 
-	fmt.Println("No syslog found in archive")
+	fmt.Fprintln(os.Stderr, "No syslog found in archive")
 }
 
 // listTarContents lists the files in a tar archive
@@ -210,7 +210,7 @@ func listTarContents(data []byte) {
 			break
 		}
 		if err != nil {
-			fmt.Printf("Error reading tar: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error reading tar: %v\n", err)
 			return
 		}
 
@@ -220,7 +220,7 @@ func listTarContents(data []byte) {
 			sizeStr = fmt.Sprintf("%3dKB", hdr.Size/1024)
 		}
 
-		fmt.Printf("  %s  %s\n", sizeStr, hdr.Name)
+		fmt.Fprintf(os.Stderr, "  %s  %s\n", sizeStr, hdr.Name)
 
 		// If it's an EEPROM bin file, try to parse it
 		if strings.HasSuffix(hdr.Name, ".bin") {
@@ -230,7 +230,7 @@ func listTarContents(data []byte) {
 			}
 			// Skip files that are all 0xff (no module present)
 			if len(eepromData) > 0 && eepromData[0] == 0xff {
-				fmt.Println("           (no module)")
+				fmt.Fprintln(os.Stderr, "           (no module)")
 				continue
 			}
 			if len(eepromData) >= 256 {

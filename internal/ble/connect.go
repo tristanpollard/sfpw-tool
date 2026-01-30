@@ -21,7 +21,7 @@ func Connect() bluetooth.Device {
 		log.Fatal("Failed to enable Bluetooth:", err)
 	}
 
-	fmt.Println("Scanning for SFP Wizard...")
+	fmt.Fprintln(os.Stderr, "Scanning for SFP Wizard")
 
 	var deviceResult bluetooth.ScanResult
 	var found bool
@@ -32,7 +32,7 @@ func Connect() bluetooth.Device {
 
 		if config.Verbose && name != "" {
 			address, _ := result.Address.MarshalText()
-			fmt.Printf("  Found: '%s' (%s)\n", name, string(address))
+			fmt.Fprintf(os.Stderr, "  Found: '%s' (%s)\n", name, string(address))
 		}
 
 		if nameLower == "sfp-wizard" || nameLower == "sfp wizard" || strings.Contains(nameLower, "sfp") {
@@ -46,12 +46,12 @@ func Connect() bluetooth.Device {
 	}
 
 	if !found {
-		fmt.Println("ERROR: SFP Wizard device not found!")
+		fmt.Fprintln(os.Stderr, "ERROR: SFP Wizard device not found!")
 		os.Exit(1)
 	}
 
 	address, _ := deviceResult.Address.MarshalText()
-	fmt.Printf("Connecting to %s...\n", string(address))
+	fmt.Fprintf(os.Stderr, "Connecting to %s...\n", string(address))
 
 	var device bluetooth.Device
 	maxRetries := 3
@@ -61,13 +61,13 @@ func Connect() bluetooth.Device {
 			break
 		}
 		if strings.Contains(err.Error(), "le-connection-abort-by-local") && attempt < maxRetries {
-			fmt.Printf("Connection aborted locally, retrying (%d/%d)...\n", attempt, maxRetries)
+			fmt.Fprintf(os.Stderr, "Connection aborted locally, retrying (%d/%d)...\n", attempt, maxRetries)
 			continue
 		}
 		log.Fatal("Failed to connect:", err)
 	}
 
-	fmt.Println("Connected!")
+	fmt.Fprintln(os.Stderr, "Connected!")
 	return device
 }
 

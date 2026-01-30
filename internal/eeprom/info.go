@@ -2,6 +2,7 @@ package eeprom
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -12,7 +13,7 @@ func ParseInfo(data []byte) {
 	// Based on SFF-8472 specification
 
 	if len(data) < 96 {
-		fmt.Println("           (insufficient data)")
+		fmt.Fprintln(os.Stderr, "           (insufficient data)")
 		return
 	}
 
@@ -47,6 +48,6 @@ func ParseInfo(data []byte) {
 	}
 
 	// Compact single-line output
-	fmt.Printf("           %s: %s %s (S/N: %s) %dMBd %dnm\n",
+	fmt.Fprintf(os.Stderr, "           %s: %s %s (S/N: %s) %dMBd %dnm\n",
 		idStr, vendorName, vendorPN, vendorSN, bitrate, wavelength)
 }

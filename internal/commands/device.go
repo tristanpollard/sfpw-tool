@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -95,26 +96,26 @@ func Version(device bluetooth.Device) {
 // Explore lists all services and characteristics.
 // This is safe and doesn't write anything.
 func Explore(device bluetooth.Device) {
-	fmt.Println("Discovering services...")
+	fmt.Fprintln(os.Stderr, "Discovering services...")
 
 	allServices, err := device.DiscoverServices(nil)
 	if err != nil {
 		log.Fatal("Failed to discover services:", err)
 	}
 
-	fmt.Printf("\nFound %d services:\n\n", len(allServices))
+	fmt.Fprintf(os.Stderr, "\nFound %d services:\n\n", len(allServices))
 
 	for i, svc := range allServices {
-		fmt.Printf("Service #%d: %s\n", i+1, svc.UUID().String())
+		fmt.Fprintf(os.Stderr, "Service #%d: %s\n", i+1, svc.UUID().String())
 
 		chars, err := svc.DiscoverCharacteristics(nil)
 		if err != nil {
-			fmt.Printf("  Error: %v\n\n", err)
+			fmt.Fprintf(os.Stderr, "  Error: %v\n\n", err)
 			continue
 		}
 
 		for j, char := range chars {
-			fmt.Printf("  [%d] %s\n", j+1, char.UUID().String())
+			fmt.Fprintf(os.Stderr, "  [%d] %s\n", j+1, char.UUID().String())
 
 			// Try to read (safe operation)
 			buf := make([]byte, 256)
@@ -122,13 +123,13 @@ func Explore(device bluetooth.Device) {
 			if err == nil && n > 0 {
 				data := buf[:n]
 				if util.IsTextData(data) {
-					fmt.Printf("      Value: %s\n", string(data))
+					fmt.Fprintf(os.Stderr, "      Value: %s\n", string(data))
 				} else {
-					fmt.Printf("      Value: %X\n", data)
+					fmt.Fprintf(os.Stderr, "      Value: %X\n", data)
 				}
 			}
 		}
-		fmt.Println()
+		fmt.Fprintln(os.Stderr)
 	}
 }
 
@@ -185,7 +186,7 @@ func APIVersion(device bluetooth.Device) {
 		log.Fatal("Notify characteristic (d587c47f) not found")
 	}
 
-	fmt.Println("Testing API protocol with /api/version...")
+	fmt.Fprintln(os.Stderr, "Testing API protocol with /api/version...")
 	config.Debugf("Writing to 9280f26c, subscribing to d587c47f")
 
 	// Send GET request to /api/version
@@ -194,7 +195,7 @@ func APIVersion(device bluetooth.Device) {
 		log.Fatal("API request failed:", err)
 	}
 
-	fmt.Printf("Response status: %d\n", resp.StatusCode)
+	fmt.Fprintf(os.Stderr, "Response status: %d\n", resp.StatusCode)
 
 	if resp.StatusCode == 200 {
 		// Parse the body from the body section (not the envelope)
@@ -203,13 +204,13 @@ func APIVersion(device bluetooth.Device) {
 			APIVersion string `json:"apiVersion"`
 		}
 		if err := json.Unmarshal(body, &versionInfo); err != nil {
-			fmt.Printf("Body (raw): %s\n", string(body))
+			fmt.Fprintf(os.Stderr, "Body (raw): %s\n", string(body))
 		} else {
 			fmt.Printf("Firmware:    v%s\n", versionInfo.FWVersion)
 			fmt.Printf("API Version: %s\n", versionInfo.APIVersion)
 		}
 	} else {
-		fmt.Printf("Body: %s\n", string(body))
+		fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 	}
 }
 
@@ -223,8 +224,8 @@ func Stats(device bluetooth.Device) {
 	}
 
 	if resp.StatusCode != 200 {
-		fmt.Printf("Error: status %d\n", resp.StatusCode)
-		fmt.Printf("Body: %s\n", string(body))
+		fmt.Fprintf(os.Stderr, "Error: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 		return
 	}
 
@@ -236,7 +237,7 @@ func Stats(device bluetooth.Device) {
 		SignalDbm    int     `json:"signalDbm"`
 	}
 	if err := json.Unmarshal(body, &stats); err != nil {
-		fmt.Printf("Body (raw): %s\n", string(body))
+		fmt.Fprintf(os.Stderr, "Body (raw): %s\n", string(body))
 		return
 	}
 
@@ -300,7 +301,7 @@ func SetName(device bluetooth.Device, name string) {
 
 	ctx := ble.SetupAPI(device)
 
-	fmt.Printf("Setting device name to: %s\n", name)
+	fmt.Fprintf(os.Stderr, "Setting device name to: %s\n", name)
 
 	// Try JSON format for the body
 	body := fmt.Sprintf(`{"name":"%s"}`, name)
@@ -312,13 +313,13 @@ func SetName(device bluetooth.Device, name string) {
 
 	switch resp.StatusCode {
 	case 200:
-		fmt.Println("Name updated successfully")
+		fmt.Fprintln(os.Stderr, "Name updated successfully")
 	case 304:
-		fmt.Println("Name unchanged (already set to this value)")
+		fmt.Fprintln(os.Stderr, "Name unchanged (already set to this value)")
 	default:
-		fmt.Printf("Error: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Error: status %d\n", resp.StatusCode)
 		if len(respBody) > 0 {
-			fmt.Printf("Body: %s\n", string(respBody))
+			fmt.Fprintf(os.Stderr, "Body: %s\n", string(respBody))
 		}
 	}
 }
@@ -327,20 +328,20 @@ func SetName(device bluetooth.Device, name string) {
 func Reboot(device bluetooth.Device) {
 	ctx := ble.SetupAPI(device)
 
-	fmt.Println("Rebooting device...")
+	fmt.Fprintln(os.Stderr, "Rebooting device...")
 
 	resp, body, err := ctx.SendRequest("POST", ctx.APIPath("/reboot"), nil, 10*1000000000)
 	if err != nil {
 		// Connection may drop during reboot - that's expected
-		fmt.Println("Reboot command sent (connection lost - this is normal)")
+		fmt.Fprintln(os.Stderr, "Reboot command sent (connection lost - this is normal)")
 		return
 	}
 
 	if resp.StatusCode == 200 {
-		fmt.Println("Reboot initiated")
+		fmt.Fprintln(os.Stderr, "Reboot initiated")
 	} else {
-		fmt.Printf("Reboot failed: status %d\n", resp.StatusCode)
-		fmt.Printf("Body: %s\n", string(body))
+		fmt.Fprintf(os.Stderr, "Reboot failed: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 	}
 }
 
@@ -349,23 +350,23 @@ func Reboot(device bluetooth.Device) {
 func PowerOff(device bluetooth.Device) {
 	ctx := ble.SetupGATT(device)
 
-	fmt.Println("Powering off device...")
+	fmt.Fprintln(os.Stderr, "Powering off device...")
 
 	// powerOff command doesn't return a response - device shuts down
 	if err := ctx.SendCommandNoResponse("powerOff"); err != nil {
 		// Connection may drop during power off - that's expected
-		fmt.Println("Power off command sent (connection lost - this is normal)")
+		fmt.Fprintln(os.Stderr, "Power off command sent (connection lost - this is normal)")
 		return
 	}
 
-	fmt.Println("Power off command sent")
+	fmt.Fprintln(os.Stderr, "Power off command sent")
 }
 
 // ChargeCtrl toggles battery charging mode using Service 3 GATT command.
 func ChargeCtrl(device bluetooth.Device) {
 	ctx := ble.SetupGATT(device)
 
-	fmt.Println("Toggling charge control...")
+	fmt.Fprintln(os.Stderr, "Toggling charge control...")
 
 	resp, err := ctx.SendCommand("chargeCtrl", 5*time.Second)
 	if err != nil {

@@ -41,44 +41,44 @@ func FirmwareUpdate(device bluetooth.Device, filename string) {
 		log.Fatalf("Failed to read firmware file: %v", err)
 	}
 
-	fmt.Printf("Loaded firmware file: %d bytes from %s\n", len(fwData), filename)
+	fmt.Fprintf(os.Stderr, "Loaded firmware file: %d bytes from %s\n", len(fwData), filename)
 
 	// Get current firmware status
-	fmt.Println("Checking current firmware status...")
+	fmt.Fprintln(os.Stderr, "Checking current firmware status...")
 	status, err := getFirmwareStatus(ctx)
 	if err != nil {
 		log.Fatalf("Failed to get firmware status: %v", err)
 	}
 
-	fmt.Printf("Current firmware: v%s (hw: %d)\n", status.FWVersion, status.HWVersion)
-	fmt.Printf("Update status: %s\n", status.Status)
+	fmt.Fprintf(os.Stderr, "Current firmware: v%s (hw: %d)\n", status.FWVersion, status.HWVersion)
+	fmt.Fprintf(os.Stderr, "Update status: %s\n", status.Status)
 
 	if status.IsUpdating {
-		fmt.Println("WARNING: A firmware update is already in progress!")
+		fmt.Fprintln(os.Stderr, "WARNING: A firmware update is already in progress!")
 		if !ConfirmAction("Abort existing update and start new one? (yes/no): ") {
-			fmt.Println("Aborted.")
+			fmt.Fprintln(os.Stderr, "Aborted.")
 			return
 		}
 
 		// Abort existing update
-		fmt.Println("Aborting existing update...")
+		fmt.Fprintln(os.Stderr, "Aborting existing update...")
 		if err := abortFirmwareUpdate(ctx); err != nil {
 			log.Fatalf("Failed to abort existing update: %v", err)
 		}
 		time.Sleep(1 * time.Second)
 	}
 
-	fmt.Println()
-	fmt.Println("WARNING: Firmware update is a potentially dangerous operation!")
-	fmt.Println("Do not disconnect power or BLE during the update.")
-	fmt.Printf("File size: %d bytes\n", len(fwData))
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "WARNING: Firmware update is a potentially dangerous operation!")
+	fmt.Fprintln(os.Stderr, "Do not disconnect power or BLE during the update.")
+	fmt.Fprintf(os.Stderr, "File size: %d bytes\n", len(fwData))
 	if !ConfirmAction("Type 'yes' to start firmware update: ") {
-		fmt.Println("Aborted.")
+		fmt.Fprintln(os.Stderr, "Aborted.")
 		return
 	}
 
 	// Step 1: Start firmware update
-	fmt.Println("\nStarting firmware update...")
+	fmt.Fprintln(os.Stderr, "\nStarting firmware update...")
 	startResp, err := startFirmwareUpdate(ctx, len(fwData))
 	if err != nil {
 		log.Fatalf("Failed to start firmware update: %v", err)
@@ -93,7 +93,7 @@ func FirmwareUpdate(device bluetooth.Device, filename string) {
 	config.Debugf("Using chunk size: %d bytes", chunkSize)
 
 	// Step 2: Send firmware data in chunks
-	fmt.Printf("Uploading firmware (%d bytes in %d-byte chunks)...\n", len(fwData), chunkSize)
+	fmt.Fprintf(os.Stderr, "Uploading firmware (%d bytes in %d-byte chunks)...\n", len(fwData), chunkSize)
 
 	totalChunks := (len(fwData) + chunkSize - 1) / chunkSize
 	for offset := 0; offset < len(fwData); offset += chunkSize {
@@ -107,23 +107,23 @@ func FirmwareUpdate(device bluetooth.Device, filename string) {
 		// Send chunk
 		err := sendFirmwareChunk(ctx, chunk, offset)
 		if err != nil {
-			fmt.Printf("\nFailed to send chunk at offset %d: %v\n", offset, err)
-			fmt.Println("Aborting firmware update...")
+			fmt.Fprintf(os.Stderr, "\nFailed to send chunk at offset %d: %v\n", offset, err)
+			fmt.Fprintln(os.Stderr, "Aborting firmware update...")
 			abortFirmwareUpdate(ctx)
 			return
 		}
 
 		// Progress bar
 		progress := float64(offset+len(chunk)) / float64(len(fwData)) * 100
-		fmt.Printf("\r  Chunk %d/%d: %d-%d bytes (%.1f%%)", chunkNum, totalChunks, offset, end, progress)
+		fmt.Fprintf(os.Stderr, "\r  Chunk %d/%d: %d-%d bytes (%.1f%%)", chunkNum, totalChunks, offset, end, progress)
 
 		// Small delay between chunks
 		time.Sleep(20 * time.Millisecond)
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 
 	// Step 3: Monitor update progress
-	fmt.Println("Firmware uploaded. Monitoring installation progress...")
+	fmt.Fprintln(os.Stderr, "Firmware uploaded. Monitoring installation progress...")
 
 	for {
 		time.Sleep(2 * time.Second)
@@ -131,20 +131,20 @@ func FirmwareUpdate(device bluetooth.Device, filename string) {
 		status, err := getFirmwareStatus(ctx)
 		if err != nil {
 			// Connection may drop during update - that's often expected
-			fmt.Printf("Status check failed (connection may have dropped): %v\n", err)
-			fmt.Println("The device may be rebooting. Please check device status manually.")
+			fmt.Fprintf(os.Stderr, "Status check failed (connection may have dropped): %v\n", err)
+			fmt.Fprintln(os.Stderr, "The device may be rebooting. Please check device status manually.")
 			return
 		}
 
-		fmt.Printf("\r  Status: %s, Progress: %d%%, Remaining: %ds    ",
+		fmt.Fprintf(os.Stderr, "\r  Status: %s, Progress: %d%%, Remaining: %ds    ",
 			status.Status, status.ProgressPercent, status.RemainingTime)
 
 		if !status.IsUpdating {
-			fmt.Println()
+			fmt.Fprintln(os.Stderr)
 			if status.Status == "finished" || status.Status == "complete" {
-				fmt.Printf("Firmware update complete! New version: v%s\n", status.FWVersion)
+				fmt.Fprintf(os.Stderr, "Firmware update complete! New version: v%s\n", status.FWVersion)
 			} else {
-				fmt.Printf("Update finished with status: %s\n", status.Status)
+				fmt.Fprintf(os.Stderr, "Update finished with status: %s\n", status.Status)
 			}
 			break
 		}
@@ -227,29 +227,29 @@ func abortFirmwareUpdate(ctx *ble.APIContext) error {
 func FirmwareAbort(device bluetooth.Device) {
 	ctx := ble.SetupAPI(device)
 
-	fmt.Println("Checking firmware status...")
+	fmt.Fprintln(os.Stderr, "Checking firmware status...")
 	status, err := getFirmwareStatus(ctx)
 	if err != nil {
 		log.Fatalf("Failed to get firmware status: %v", err)
 	}
 
 	if !status.IsUpdating {
-		fmt.Println("No firmware update in progress.")
+		fmt.Fprintln(os.Stderr, "No firmware update in progress.")
 		return
 	}
 
-	fmt.Printf("Update in progress: %d%% complete, status: %s\n", status.ProgressPercent, status.Status)
+	fmt.Fprintf(os.Stderr, "Update in progress: %d%% complete, status: %s\n", status.ProgressPercent, status.Status)
 	if !ConfirmAction("Abort update? (yes/no): ") {
-		fmt.Println("Cancelled.")
+		fmt.Fprintln(os.Stderr, "Cancelled.")
 		return
 	}
 
-	fmt.Println("Aborting firmware update...")
+	fmt.Fprintln(os.Stderr, "Aborting firmware update...")
 	if err := abortFirmwareUpdate(ctx); err != nil {
 		log.Fatalf("Failed to abort: %v", err)
 	}
 
-	fmt.Println("Firmware update aborted.")
+	fmt.Fprintln(os.Stderr, "Firmware update aborted.")
 }
 
 // FirmwareStatusCmd shows detailed firmware status
@@ -262,8 +262,8 @@ func FirmwareStatusCmd(device bluetooth.Device) {
 	}
 
 	if resp.StatusCode != 200 {
-		fmt.Printf("Error: status %d\n", resp.StatusCode)
-		fmt.Printf("Body: %s\n", string(body))
+		fmt.Fprintf(os.Stderr, "Error: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 		return
 	}
 

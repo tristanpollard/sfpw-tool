@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/vitaminmoo/sfpw-tool/internal/ble"
 	"github.com/vitaminmoo/sfpw-tool/internal/eeprom"
+	"github.com/vitaminmoo/sfpw-tool/internal/firmware"
 	"github.com/vitaminmoo/sfpw-tool/internal/protocol"
 	"github.com/vitaminmoo/sfpw-tool/internal/util"
 
@@ -42,7 +44,7 @@ func TestEncode() {
 	*/
 
 	jsonData, _ := json.Marshal(req)
-	fmt.Printf("JSON (%d bytes): %s\n\n", len(jsonData), string(jsonData))
+	fmt.Fprintf(os.Stderr, "JSON (%d bytes): %s\n\n", len(jsonData), string(jsonData))
 
 	// Use seqNum 5 to match the captured request ID
 	encoded, err := protocol.BinmeEncode(jsonData, nil, 5)
@@ -50,7 +52,7 @@ func TestEncode() {
 		log.Fatal("Encode failed: ", err)
 	}
 
-	fmt.Printf("Encoded (%d bytes):\n%X\n\n", len(encoded), encoded)
+	fmt.Fprintf(os.Stderr, "Encoded (%d bytes):\n%X\n\n", len(encoded), encoded)
 
 	// Now decode it back
 	headerJSON, bodyData, err := protocol.BinmeDecode(encoded)
@@ -58,13 +60,13 @@ func TestEncode() {
 		log.Fatal("Decode failed:", err)
 	}
 
-	fmt.Printf("Decoded header (%d bytes): %s\n", len(headerJSON), string(headerJSON))
-	fmt.Printf("Decoded body (%d bytes): %X\n\n", len(bodyData), bodyData)
+	fmt.Fprintf(os.Stderr, "Decoded header (%d bytes): %s\n", len(headerJSON), string(headerJSON))
+	fmt.Fprintf(os.Stderr, "Decoded body (%d bytes): %X\n\n", len(bodyData), bodyData)
 
 	// Print the captured packet for comparison
-	fmt.Println("=== Captured from official app ===")
+	fmt.Fprintln(os.Stderr, "=== Captured from official app ===")
 	captured := "009a000503010101000000007d789c6d8cb10ec2300c44ffc573214d1592901db157fc804b8d9221c210335455ff1d2375e48693eef4ee569085091264111ee9f5a126d04199b5ea771dfed8ae93b252aa8eb032241b7c74ee3c0cc1f9d84125c9cfdfd3f572539051b206835c8c3df6c6de3dda293c268ad1e883348532e14cef0669ddb62ffb322b7a0201010000000008789c030000000001"
-	fmt.Printf("Captured: %s\n", captured)
+	fmt.Fprintf(os.Stderr, "Captured: %s\n", captured)
 
 	byteArray, err := hex.DecodeString(captured)
 	if err != nil {
@@ -75,8 +77,8 @@ func TestEncode() {
 	if err != nil {
 		log.Fatal("Decode failed:", err)
 	}
-	fmt.Printf("Decoded header (%d bytes): %s\n", len(headerJSON), string(headerJSON))
-	fmt.Printf("Decoded body (%d bytes): %X\n\n", len(bodyData), bodyData)
+	fmt.Fprintf(os.Stderr, "Decoded header (%d bytes): %s\n", len(headerJSON), string(headerJSON))
+	fmt.Fprintf(os.Stderr, "Decoded body (%d bytes): %X\n\n", len(bodyData), bodyData)
 }
 
 // TestPackets reads packets from a TSV file and decodes each one
@@ -106,7 +108,7 @@ func TestPackets(filename string) {
 		// Parse TSV: frame_num \t src \t dst \t hex
 		parts := strings.Split(line, "\t")
 		if len(parts) < 4 {
-			fmt.Printf("Line %d: invalid format (expected 4 columns, got %d)\n", lineNum, len(parts))
+			fmt.Fprintf(os.Stderr, "Line %d: invalid format (expected 4 columns, got %d)\n", lineNum, len(parts))
 			failCount++
 			continue
 		}
@@ -126,14 +128,14 @@ func TestPackets(filename string) {
 
 		// Skip very short packets (like 0100ffff)
 		if len(hexData) < 16 {
-			fmt.Printf("Frame %s [%s]: too short (%d hex chars), skipping\n", frameNum, direction, len(hexData))
+			fmt.Fprintf(os.Stderr, "Frame %s [%s]: too short (%d hex chars), skipping\n", frameNum, direction, len(hexData))
 			continue
 		}
 
 		// Decode hex
 		data, err := hex.DecodeString(hexData)
 		if err != nil {
-			fmt.Printf("Frame %s [%s]: hex decode error: %v\n", frameNum, direction, err)
+			fmt.Fprintf(os.Stderr, "Frame %s [%s]: hex decode error: %v\n", frameNum, direction, err)
 			failCount++
 			continue
 		}
@@ -141,7 +143,7 @@ func TestPackets(filename string) {
 		// Try to decode as binme packet
 		headerJSON, bodyData, err := protocol.BinmeDecode(data)
 		if err != nil {
-			fmt.Printf("Frame %s [%s]: decode error: %v\n", frameNum, direction, err)
+			fmt.Fprintf(os.Stderr, "Frame %s [%s]: decode error: %v\n", frameNum, direction, err)
 			failCount++
 			continue
 		}
@@ -149,7 +151,7 @@ func TestPackets(filename string) {
 		// Parse the header JSON to get type and path/status
 		var envelope map[string]any
 		if err := json.Unmarshal(headerJSON, &envelope); err != nil {
-			fmt.Printf("Frame %s [%s]: JSON parse error: %v\n", frameNum, direction, err)
+			fmt.Fprintf(os.Stderr, "Frame %s [%s]: JSON parse error: %v\n", frameNum, direction, err)
 			failCount++
 			continue
 		}
@@ -185,7 +187,7 @@ func TestPackets(filename string) {
 			}
 		}
 
-		fmt.Printf("Frame %s [%s] id=%s: %s%s\n", frameNum, direction, shortID, summary, bodyStr)
+		fmt.Fprintf(os.Stderr, "Frame %s [%s] id=%s: %s%s\n", frameNum, direction, shortID, summary, bodyStr)
 		successCount++
 	}
 
@@ -193,10 +195,10 @@ func TestPackets(filename string) {
 		log.Fatal("Scanner error:", err)
 	}
 
-	fmt.Printf("\n--- Summary ---\n")
-	fmt.Printf("Total lines: %d\n", lineNum)
-	fmt.Printf("Success: %d\n", successCount)
-	fmt.Printf("Failed: %d\n", failCount)
+	fmt.Fprintf(os.Stderr, "\n--- Summary ---\n")
+	fmt.Fprintf(os.Stderr, "Total lines: %d\n", lineNum)
+	fmt.Fprintf(os.Stderr, "Success: %d\n", successCount)
+	fmt.Fprintf(os.Stderr, "Failed: %d\n", failCount)
 }
 
 // ParseEEPROM parses and displays SFP/QSFP EEPROM data from a file
@@ -206,11 +208,11 @@ func ParseEEPROM(filename string) {
 		log.Fatalf("Failed to read file: %v", err)
 	}
 
-	fmt.Printf("File: %s (%d bytes)\n\n", filename, len(data))
+	fmt.Fprintf(os.Stderr, "File: %s (%d bytes)\n\n", filename, len(data))
 
 	// Check for empty/invalid data
 	if len(data) == 0 {
-		fmt.Println("ERROR: File is empty")
+		fmt.Fprintln(os.Stderr, "ERROR: File is empty")
 		return
 	}
 
@@ -223,36 +225,36 @@ func ParseEEPROM(filename string) {
 		}
 	}
 	if allFF {
-		fmt.Println("WARNING: File contains all 0xFF bytes (no module data)")
+		fmt.Fprintln(os.Stderr, "WARNING: File contains all 0xFF bytes (no module data)")
 		return
 	}
 
 	// Determine module type by size and identifier
 	if len(data) < 128 {
-		fmt.Printf("ERROR: File too small for SFP EEPROM (need at least 128 bytes, got %d)\n", len(data))
+		fmt.Fprintf(os.Stderr, "ERROR: File too small for SFP EEPROM (need at least 128 bytes, got %d)\n", len(data))
 		return
 	}
 
 	identifier := data[0]
 	switch identifier {
 	case 0x03:
-		fmt.Println("=== SFP/SFP+ Module (SFF-8472) ===")
-		fmt.Println()
+		fmt.Fprintln(os.Stderr, "=== SFP/SFP+ Module (SFF-8472) ===")
+		fmt.Fprintln(os.Stderr)
 		eeprom.ParseSFPDetailed(data)
 	case 0x0c:
-		fmt.Println("=== QSFP Module (SFF-8436) ===")
-		fmt.Println()
+		fmt.Fprintln(os.Stderr, "=== QSFP Module (SFF-8436) ===")
+		fmt.Fprintln(os.Stderr)
 		eeprom.ParseQSFPDetailed(data)
 	case 0x0d:
-		fmt.Println("=== QSFP+ Module (SFF-8636) ===")
-		fmt.Println()
+		fmt.Fprintln(os.Stderr, "=== QSFP+ Module (SFF-8636) ===")
+		fmt.Fprintln(os.Stderr)
 		eeprom.ParseQSFPDetailed(data)
 	case 0x11:
-		fmt.Println("=== QSFP28 Module (SFF-8636) ===")
-		fmt.Println()
+		fmt.Fprintln(os.Stderr, "=== QSFP28 Module (SFF-8636) ===")
+		fmt.Fprintln(os.Stderr)
 		eeprom.ParseQSFPDetailed(data)
 	default:
-		fmt.Printf("=== Unknown Module Type (identifier: 0x%02X) ===\n\n", identifier)
+		fmt.Fprintf(os.Stderr, "=== Unknown Module Type (identifier: 0x%02X) ===\n\n", identifier)
 		// Try SFP parsing anyway
 		eeprom.ParseSFPDetailed(data)
 	}
@@ -268,12 +270,12 @@ func RawAPI(device bluetooth.Device, method, path, body string) {
 		fullPath = ctx.APIPath(path)
 	}
 
-	fmt.Printf("Sending %s %s\n", method, fullPath)
+	fmt.Fprintf(os.Stderr, "Sending %s %s\n", method, fullPath)
 
 	var bodyBytes []byte
 	if body != "" {
 		bodyBytes = []byte(body)
-		fmt.Printf("Body: %s\n", body)
+		fmt.Fprintf(os.Stderr, "Body: %s\n", body)
 	}
 
 	resp, respBody, err := ctx.SendRequest(method, fullPath, bodyBytes, 10*time.Second)
@@ -281,11 +283,11 @@ func RawAPI(device bluetooth.Device, method, path, body string) {
 		log.Fatalf("Request failed: %v", err)
 	}
 
-	fmt.Printf("\nResponse status: %d\n", resp.StatusCode)
-	fmt.Printf("Response body (%d bytes):\n", len(respBody))
+	fmt.Fprintf(os.Stderr, "\nResponse status: %d\n", resp.StatusCode)
+	fmt.Fprintf(os.Stderr, "Response body (%d bytes):\n", len(respBody))
 
 	if len(respBody) == 0 {
-		fmt.Println("  (empty)")
+		fmt.Fprintln(os.Stderr, "  (empty)")
 		return
 	}
 
@@ -306,4 +308,287 @@ func RawAPI(device bluetooth.Device, method, path, body string) {
 			fmt.Printf("  %04x: % x\n", i, respBody[i:end])
 		}
 	}
+}
+
+// versionedDB holds a password database with its version info.
+type versionedDB struct {
+	Version string
+	DB      *firmware.PasswordDatabase
+}
+
+// PassCompare compares password databases across firmware versions.
+// It generates a table showing what passwords would be tried for each module
+// under each firmware version's lookup algorithm.
+func PassCompare(additionalFiles []string) error {
+	var databases []versionedDB
+
+	// Load all downloaded firmware from store
+	store, err := firmware.NewFirmwareStore()
+	if err != nil {
+		return fmt.Errorf("failed to open firmware store: %w", err)
+	}
+
+	entries, err := store.List()
+	if err != nil {
+		return fmt.Errorf("failed to list firmware: %w", err)
+	}
+
+	// Load each downloaded firmware
+	for _, e := range entries {
+		db, err := loadPasswordDB(e.Path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load %s: %v\n", e.Version, err)
+			continue
+		}
+		databases = append(databases, versionedDB{Version: e.Version, DB: db})
+	}
+
+	// Load additional files
+	for _, path := range additionalFiles {
+		db, err := loadPasswordDB(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load %s: %v\n", path, err)
+			continue
+		}
+		// Extract version from filename
+		version := extractVersionFromPath(path)
+		databases = append(databases, versionedDB{Version: version, DB: db})
+	}
+
+	if len(databases) == 0 {
+		fmt.Fprintln(os.Stderr, "No firmware databases loaded.")
+		fmt.Fprintln(os.Stderr, "Download firmware with: sfpw fw download")
+		fmt.Fprintln(os.Stderr, "Or specify firmware files: sfpw debug pass-compare /path/to/firmware.bin")
+		return nil
+	}
+
+	// Sort by version
+	sort.Slice(databases, func(i, j int) bool {
+		return compareVersions(databases[i].Version, databases[j].Version) < 0
+	})
+
+	// Collect all unique part numbers across all databases
+	partNumbers := collectAllPartNumbers(databases)
+
+	// Print header
+	fmt.Printf("# Password Database Comparison\n\n")
+	fmt.Printf("Firmware versions loaded: %d\n", len(databases))
+	for _, db := range databases {
+		fmt.Printf("  - %s: %d entries, %d unique passwords\n",
+			db.Version, len(db.DB.Entries), len(db.DB.UniquePasswords()))
+	}
+	fmt.Printf("\nTotal unique part numbers: %d\n\n", len(partNumbers))
+
+	// Build version headers
+	versions := make([]string, len(databases))
+	for i, db := range databases {
+		versions[i] = db.Version
+	}
+
+	// Print table
+	fmt.Printf("## Passwords Tried Per Module\n\n")
+	fmt.Printf("This table shows what passwords each firmware version would attempt for each module.\n")
+	fmt.Printf("Lookup algorithm differences:\n")
+	fmt.Printf("- **v1.0.5**: First match only (no verification, silent failures possible)\n")
+	fmt.Printf("- **v1.0.10+**: First match OR brute-force all unique passwords if no match (with verification)\n")
+	fmt.Printf("- **v1.1.3**: All matching entries PLUS brute-force all unique writable passwords (with verification)\n\n")
+
+	// Markdown table header
+	fmt.Printf("| Part Number |")
+	for _, v := range versions {
+		fmt.Printf(" %s |", v)
+	}
+	fmt.Printf("\n|-------------|")
+	for range versions {
+		fmt.Printf("------|")
+	}
+	fmt.Printf("\n")
+
+	// Table rows
+	for _, pn := range partNumbers {
+		fmt.Printf("| %s |", pn)
+		for _, db := range databases {
+			passwords := getPasswordsForVersion(db.Version, db.DB, pn)
+			fmt.Printf(" %s |", passwords)
+		}
+		fmt.Printf("\n")
+	}
+
+	return nil
+}
+
+// loadPasswordDB loads a password database from a firmware file.
+func loadPasswordDB(path string) (*firmware.PasswordDatabase, error) {
+	img, err := firmware.ParseESP32Image(path)
+	if err != nil {
+		return nil, err
+	}
+	return firmware.ExtractPasswordDatabase(img)
+}
+
+// extractVersionFromPath extracts a version string from a firmware file path.
+func extractVersionFromPath(path string) string {
+	base := strings.TrimSuffix(path, ".bin")
+	parts := strings.Split(base, "/")
+	name := parts[len(parts)-1]
+
+	// Strip common prefixes
+	for _, prefix := range []string{"sfpw_v", "sfpw_", "ESP32-", "firmware-v", "firmware-", "fw-", "v"} {
+		if strings.HasPrefix(name, prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+
+	return name
+}
+
+// compareVersions compares two version strings.
+func compareVersions(a, b string) int {
+	// Normalize version strings
+	a = strings.TrimPrefix(a, "v")
+	b = strings.TrimPrefix(b, "v")
+
+	partsA := strings.Split(a, ".")
+	partsB := strings.Split(b, ".")
+
+	for i := 0; i < len(partsA) && i < len(partsB); i++ {
+		var numA, numB int
+		fmt.Sscanf(partsA[i], "%d", &numA)
+		fmt.Sscanf(partsB[i], "%d", &numB)
+		if numA < numB {
+			return -1
+		}
+		if numA > numB {
+			return 1
+		}
+	}
+
+	return len(partsA) - len(partsB)
+}
+
+// collectAllPartNumbers returns all unique part numbers across all databases, sorted.
+func collectAllPartNumbers(databases []versionedDB) []string {
+	seen := make(map[string]bool)
+	for _, db := range databases {
+		for _, entry := range db.DB.Entries {
+			seen[entry.PartNumber] = true
+		}
+	}
+
+	result := make([]string, 0, len(seen))
+	for pn := range seen {
+		result = append(result, pn)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// getPasswordsForVersion returns a formatted string of passwords that would be tried
+// for a given part number under the specified firmware version's lookup algorithm.
+func getPasswordsForVersion(version string, db *firmware.PasswordDatabase, partNum string) string {
+	// Normalize version for comparison
+	v := strings.TrimPrefix(version, "v")
+
+	// Get all entries matching this part number
+	matches := db.FindByPartNumber(partNum)
+
+	// Filter out read-only entries
+	var writableMatches []firmware.PasswordEntry
+	for _, m := range matches {
+		if !m.ReadOnly {
+			writableMatches = append(writableMatches, m)
+		}
+	}
+
+	// Determine which passwords would be tried based on version
+	var passwordsToTry [][4]byte
+
+	if isVersion105(v) {
+		// v1.0.5: First match only
+		if len(writableMatches) > 0 {
+			passwordsToTry = append(passwordsToTry, writableMatches[0].Password)
+		}
+	} else if isVersion113OrLater(v) {
+		// v1.1.3+: All matching entries PLUS all unique writable passwords (brute force)
+		seen := make(map[[4]byte]bool)
+
+		// First, all matching passwords
+		for _, m := range writableMatches {
+			if !seen[m.Password] {
+				seen[m.Password] = true
+				passwordsToTry = append(passwordsToTry, m.Password)
+			}
+		}
+
+		// Then, all unique passwords from entire database (brute force)
+		for _, pw := range db.UniquePasswords() {
+			if !seen[pw] {
+				seen[pw] = true
+				passwordsToTry = append(passwordsToTry, pw)
+			}
+		}
+	} else {
+		// v1.0.10, v1.1.0, v1.1.1: First match OR brute force if no match
+		if len(writableMatches) > 0 {
+			// Use matching passwords (deduplicated)
+			seen := make(map[[4]byte]bool)
+			for _, m := range writableMatches {
+				if !seen[m.Password] {
+					seen[m.Password] = true
+					passwordsToTry = append(passwordsToTry, m.Password)
+				}
+			}
+		} else {
+			// No match - brute force all unique passwords
+			passwordsToTry = db.UniquePasswords()
+		}
+	}
+
+	// Format passwords
+	if len(passwordsToTry) == 0 {
+		return "—"
+	}
+
+	var parts []string
+	for _, pw := range passwordsToTry {
+		parts = append(parts, formatPasswordCompact(pw))
+	}
+	// Use <br> for line breaks within markdown table cells
+	return strings.Join(parts, "<br>")
+}
+
+// isVersion105 checks if this is v1.0.5 (which has different lookup behavior).
+func isVersion105(v string) bool {
+	return v == "1.0.5" || strings.HasPrefix(v, "1.0.5")
+}
+
+// isVersion113OrLater checks if this version is v1.1.3 or later.
+func isVersion113OrLater(v string) bool {
+	parts := strings.Split(v, ".")
+	if len(parts) < 3 {
+		return false
+	}
+	var major, minor, patch int
+	fmt.Sscanf(parts[0], "%d", &major)
+	fmt.Sscanf(parts[1], "%d", &minor)
+	fmt.Sscanf(parts[2], "%d", &patch)
+
+	if major > 1 {
+		return true
+	}
+	if major == 1 {
+		if minor > 1 {
+			return true
+		}
+		if minor == 1 && patch >= 3 {
+			return true
+		}
+	}
+	return false
+}
+
+// formatPasswordCompact returns a compact hex representation of a password.
+func formatPasswordCompact(pw [4]byte) string {
+	return fmt.Sprintf("`%02x,%02x,%02x,%02x`", pw[0], pw[1], pw[2], pw[3])
 }

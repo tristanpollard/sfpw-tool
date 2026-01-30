@@ -23,7 +23,7 @@ func ModuleInfo(device bluetooth.Device) {
 		log.Fatal(err)
 	}
 
-	fmt.Println("Getting module details...")
+	fmt.Fprintln(os.Stderr, "Getting module details...")
 
 	// The XSFP endpoints use the same base path structure
 	resp, body, err := ctx.SendRequest("GET", ctx.APIPath("/xsfp/module/details"), nil, 10*time.Second)
@@ -32,9 +32,9 @@ func ModuleInfo(device bluetooth.Device) {
 	}
 
 	if resp.StatusCode != 200 {
-		fmt.Printf("Error: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Error: status %d\n", resp.StatusCode)
 		if len(body) > 0 {
-			fmt.Printf("Body: %s\n", string(body))
+			fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 		}
 		return
 	}
@@ -83,9 +83,9 @@ func ModuleRead(device bluetooth.Device, filename string) {
 
 	shortHash := store.ShortHash(hash)
 	if isNew {
-		fmt.Printf("Saved to store: %s (new)\n", shortHash)
+		fmt.Fprintf(os.Stderr, "Saved to store: %s (new)\n", shortHash)
 	} else {
-		fmt.Printf("Saved to store: %s (existing profile)\n", shortHash)
+		fmt.Fprintf(os.Stderr, "Saved to store: %s (existing profile)\n", shortHash)
 	}
 
 	// Optionally save to file
@@ -93,7 +93,7 @@ func ModuleRead(device bluetooth.Device, filename string) {
 		if err := os.WriteFile(filename, data, 0o644); err != nil {
 			log.Fatalf("Failed to write file: %v", err)
 		}
-		fmt.Printf("Saved to file: %s\n", filename)
+		fmt.Fprintf(os.Stderr, "Saved to file: %s\n", filename)
 	}
 
 	// Display info about the data
@@ -152,18 +152,18 @@ func ModuleReadData(ctx *ble.APIContext) ([]byte, error) {
 func DDM(device bluetooth.Device) {
 	ctx := ble.SetupAPI(device)
 
-	fmt.Println("Calling /ddm/start...")
+	fmt.Fprintln(os.Stderr, "Calling /ddm/start...")
 
 	resp, body, err := ctx.SendRequest("GET", ctx.APIPath("/ddm/start"), nil, 10*time.Second)
 	if err != nil {
 		log.Fatal("API request failed:", err)
 	}
 
-	fmt.Printf("Status: %d\n", resp.StatusCode)
+	fmt.Fprintf(os.Stderr, "Status: %d\n", resp.StatusCode)
 
 	if resp.StatusCode != 200 {
 		if len(body) > 0 {
-			fmt.Printf("Body: %s\n", string(body))
+			fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 		}
 		return
 	}
@@ -174,11 +174,11 @@ func DDM(device bluetooth.Device) {
 		Chunk int `json:"chunk"`
 	}
 	if err := json.Unmarshal(body, &startResp); err != nil {
-		fmt.Printf("Start response (raw): %s\n", string(body))
+		fmt.Fprintf(os.Stderr, "Start response (raw): %s\n", string(body))
 		return
 	}
 
-	fmt.Printf("Start response: size=%d, chunk=%d\n", startResp.Size, startResp.Chunk)
+	fmt.Fprintf(os.Stderr, "Start response: size=%d, chunk=%d\n", startResp.Size, startResp.Chunk)
 
 	// Determine how much to request - use chunk size if size is 0
 	requestSize := startResp.Size
@@ -187,18 +187,18 @@ func DDM(device bluetooth.Device) {
 	}
 
 	// Now fetch data from /ddm/data
-	fmt.Println("\nCalling /ddm/data...")
+	fmt.Fprintln(os.Stderr, "\nCalling /ddm/data...")
 	reqBody := fmt.Sprintf(`{"offset":0,"chunk":%d}`, requestSize)
 	resp, body, err = ctx.SendRequest("GET", ctx.APIPath("/ddm/data"), []byte(reqBody), 60*time.Second)
 	if err != nil {
 		log.Fatal("API request failed:", err)
 	}
 
-	fmt.Printf("Status: %d\n", resp.StatusCode)
-	fmt.Printf("Received %d bytes\n", len(body))
+	fmt.Fprintf(os.Stderr, "Status: %d\n", resp.StatusCode)
+	fmt.Fprintf(os.Stderr, "Received %d bytes\n", len(body))
 
 	if len(body) == 0 {
-		fmt.Println("(empty response body)")
+		fmt.Fprintln(os.Stderr, "(empty response body)")
 		return
 	}
 
@@ -210,7 +210,7 @@ func DDM(device bluetooth.Device) {
 			fmt.Printf("\n%s", string(body))
 		} else {
 			// Binary data - show hex dump
-			fmt.Printf("Body (hex):\n")
+			fmt.Fprintf(os.Stderr, "Body (hex):\n")
 			for i := 0; i < len(body); i += 16 {
 				end := i + 16
 				if end > len(body) {

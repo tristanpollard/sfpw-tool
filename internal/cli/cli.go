@@ -288,7 +288,7 @@ func (c *SnapshotWriteCmd) Run(globals *CLI) error {
 		}
 
 		entry := profiles[fullHash]
-		fmt.Printf("Using store profile: %s (%s %s)\n", store.ShortHash(fullHash), entry.VendorName, entry.PartNumber)
+		fmt.Fprintf(os.Stderr, "Using store profile: %s (%s %s)\n", store.ShortHash(fullHash), entry.VendorName, entry.PartNumber)
 		filePath = tmpPath
 	}
 
@@ -400,14 +400,14 @@ func (c *FwListCmd) Run(globals *CLI) error {
 	}
 
 	if len(entries) == 0 {
-		fmt.Println("No firmware files downloaded.")
-		fmt.Println("Download firmware with: sfpw fw download")
+		fmt.Fprintln(os.Stderr, "No firmware files downloaded.")
+		fmt.Fprintln(os.Stderr, "Download firmware with: sfpw fw download")
 		return nil
 	}
 
-	fmt.Printf("Downloaded firmware files (%d):\n\n", len(entries))
+	fmt.Fprintf(os.Stderr, "Downloaded firmware files (%d):\n\n", len(entries))
 	for _, e := range entries {
-		fmt.Printf("  %-12s  %-10s  %s\n",
+		fmt.Fprintf(os.Stderr, "  %-12s  %-10s  %s\n",
 			e.Version,
 			humanizeBytes(e.FileSize),
 			e.Downloaded.Format("2006-01-02 15:04"))
@@ -439,11 +439,11 @@ func (c *FwDownloadCmd) Run(globals *CLI) error {
 	}
 
 	if len(versions) == 0 {
-		fmt.Println("No firmware versions available from cloud.")
+		fmt.Fprintln(os.Stderr, "No firmware versions available from cloud.")
 		return nil
 	}
 
-	fmt.Printf("Found %d firmware version(s) available:\n\n", len(versions))
+	fmt.Fprintf(os.Stderr, "Found %d firmware version(s) available:\n\n", len(versions))
 
 	store, err := firmware.NewFirmwareStore()
 	if err != nil {
@@ -455,12 +455,12 @@ func (c *FwDownloadCmd) Run(globals *CLI) error {
 	for _, v := range versions {
 		// Check if already downloaded
 		if store.Has(v.Version, v.SHA256) {
-			fmt.Printf("  %s: already downloaded\n", v.Version)
+			fmt.Fprintf(os.Stderr, "  %s: already downloaded\n", v.Version)
 			skipped++
 			continue
 		}
 
-		fmt.Printf("  %s: downloading...", v.Version)
+		fmt.Fprintf(os.Stderr, "  %s: downloading...", v.Version)
 		progressBar := &CLIProgressBar{width: 30}
 		_, err := store.Download(v, func(current, total int64, desc string) {
 			progressBar.Update(current, total, "")
@@ -468,13 +468,13 @@ func (c *FwDownloadCmd) Run(globals *CLI) error {
 		progressBar.Complete()
 
 		if err != nil {
-			fmt.Printf(" error: %v\n", err)
+			fmt.Fprintf(os.Stderr, " error: %v\n", err)
 			continue
 		}
 		downloaded++
 	}
 
-	fmt.Printf("\nDownloaded %d, skipped %d (already present)\n", downloaded, skipped)
+	fmt.Fprintf(os.Stderr, "\nDownloaded %d, skipped %d (already present)\n", downloaded, skipped)
 	return nil
 }
 
@@ -507,7 +507,7 @@ func (c *FwPassdbCmd) Run(globals *CLI) error {
 		for _, e := range entries {
 			if e.Version == version || e.Version == "v"+version || "v"+e.Version == version {
 				filePath = e.Path
-				fmt.Printf("Using downloaded firmware: %s\n", e.Version)
+				fmt.Fprintf(os.Stderr, "Using downloaded firmware: %s\n", e.Version)
 				break
 			}
 		}
@@ -703,17 +703,17 @@ func (p *CLIProgressBar) Update(current, total int64, desc string) {
 	p.current = current
 	p.total = total
 	if total == 0 {
-		fmt.Printf("\r  %s...", desc)
+		fmt.Fprintf(os.Stderr, "\r  %s...", desc)
 		return
 	}
 	percent := float64(current) / float64(total) * 100
 	filled := min(int(float64(p.width)*float64(current)/float64(total)), p.width)
 	bar := strings.Repeat("=", filled) + strings.Repeat(" ", p.width-filled)
-	fmt.Printf("\r  %s [%s] %.1f%%", desc, bar, percent)
+	fmt.Fprintf(os.Stderr, "\r  %s [%s] %.1f%%", desc, bar, percent)
 }
 
 func (p *CLIProgressBar) Complete() {
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 }
 
 func humanizeBytes(b int64) string {
@@ -772,6 +772,7 @@ type DebugCmd struct {
 	TestPackets DebugTestPacketsCmd `cmd:"" name:"test-packets" help:"Decode packets from TSV file"`
 	ParseEeprom DebugParseEepromCmd `cmd:"" name:"parse-eeprom" help:"Parse SFP/QSFP EEPROM file"`
 	RawAPI      DebugRawAPICmd      `cmd:"" name:"raw-api" help:"Send raw API request"`
+	PassCompare DebugPassCompareCmd `cmd:"" name:"pass-compare" help:"Compare password databases across firmware versions"`
 }
 
 type DebugExploreCmd struct{}
@@ -836,6 +837,15 @@ func (c *DebugRawAPICmd) Run(globals *CLI) error {
 	return nil
 }
 
+type DebugPassCompareCmd struct {
+	Files []string `arg:"" optional:"" help:"Additional firmware files to include (e.g., local v1.0.5.bin)"`
+}
+
+func (c *DebugPassCompareCmd) Run(globals *CLI) error {
+	config.Verbose = globals.Verbose
+	return commands.PassCompare(c.Files)
+}
+
 // --- Store Commands ---
 
 type StoreCmd struct {
@@ -861,8 +871,8 @@ func (c *StoreListCmd) Run(globals *CLI) error {
 	}
 
 	if len(profiles) == 0 {
-		fmt.Println("No profiles in store.")
-		fmt.Println("Import profiles with: sfpw store import <eeprom.bin>")
+		fmt.Fprintln(os.Stderr, "No profiles in store.")
+		fmt.Fprintln(os.Stderr, "Import profiles with: sfpw store import <eeprom.bin>")
 		return nil
 	}
 
@@ -973,17 +983,17 @@ func (c *StoreImportCmd) Run(globals *CLI) error {
 	}
 
 	if isNew {
-		fmt.Printf("Imported new profile: %s\n", store.ShortHash(hash))
+		fmt.Fprintf(os.Stderr, "Imported new profile: %s\n", store.ShortHash(hash))
 	} else {
-		fmt.Printf("Profile already exists: %s (added source)\n", store.ShortHash(hash))
+		fmt.Fprintf(os.Stderr, "Profile already exists: %s (added source)\n", store.ShortHash(hash))
 	}
 
 	// Show summary
 	meta, _ := s.GetMetadata(hash)
 	if meta != nil {
-		fmt.Printf("  Vendor: %s\n", meta.Identity.VendorName)
-		fmt.Printf("  Part:   %s\n", meta.Identity.PartNumber)
-		fmt.Printf("  S/N:    %s\n", meta.Identity.SerialNumber)
+		fmt.Fprintf(os.Stderr, "  Vendor: %s\n", meta.Identity.VendorName)
+		fmt.Fprintf(os.Stderr, "  Part:   %s\n", meta.Identity.PartNumber)
+		fmt.Fprintf(os.Stderr, "  S/N:    %s\n", meta.Identity.SerialNumber)
 	}
 
 	return nil
@@ -1024,7 +1034,7 @@ func (c *StoreExportCmd) Run(globals *CLI) error {
 		return fmt.Errorf("failed to export: %w", err)
 	}
 
-	fmt.Printf("Exported to: %s\n", c.Output)
+	fmt.Fprintf(os.Stderr, "Exported to: %s\n", c.Output)
 	return nil
 }
 

@@ -36,8 +36,8 @@ func GetAndDisplayJSON(device bluetooth.Device, endpoint string) {
 	}
 
 	if resp.StatusCode != 200 {
-		fmt.Printf("Error: status %d\n", resp.StatusCode)
-		fmt.Printf("Body: %s\n", string(body))
+		fmt.Fprintf(os.Stderr, "Error: status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Body: %s\n", string(body))
 		return
 	}
 
@@ -53,17 +53,17 @@ func DisplayEEPROMInfo(data []byte) {
 	vendorName := strings.TrimSpace(string(data[20:36]))
 	vendorPN := strings.TrimSpace(string(data[40:56]))
 	vendorSN := strings.TrimSpace(string(data[68:84]))
-	fmt.Printf("\nModule info:\n")
-	fmt.Printf("  Vendor: %s\n", vendorName)
-	fmt.Printf("  Part:   %s\n", vendorPN)
-	fmt.Printf("  S/N:    %s\n", vendorSN)
+	fmt.Fprintf(os.Stderr, "\nModule info:\n")
+	fmt.Fprintf(os.Stderr, "  Vendor: %s\n", vendorName)
+	fmt.Fprintf(os.Stderr, "  Part:   %s\n", vendorPN)
+	fmt.Fprintf(os.Stderr, "  S/N:    %s\n", vendorSN)
 }
 
 // FetchAndSaveData performs the common start/data fetch pattern and saves to file.
 // Used by module-read and snapshot-read.
 func FetchAndSaveData(ctx *ble.APIContext, startEndpoint, dataEndpoint, filename string) ([]byte, error) {
 	// Step 1: GET start endpoint to initialize and get size
-	fmt.Println("Initializing read...")
+	fmt.Fprintln(os.Stderr, "Initializing read...")
 	resp, body, err := ctx.SendRequest("GET", ctx.APIPath(startEndpoint), nil, 10*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize: %w", err)
@@ -76,7 +76,7 @@ func FetchAndSaveData(ctx *ble.APIContext, startEndpoint, dataEndpoint, filename
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	fmt.Printf("Info: %s\n", string(body))
+	fmt.Fprintf(os.Stderr, "Info: %s\n", string(body))
 
 	// Parse to get size info
 	var startResp struct {
@@ -93,7 +93,7 @@ func FetchAndSaveData(ctx *ble.APIContext, startEndpoint, dataEndpoint, filename
 	}
 
 	// Step 2: GET data endpoint to read the data
-	fmt.Println("Reading data...")
+	fmt.Fprintln(os.Stderr, "Reading data...")
 	reqBody := fmt.Sprintf(`{"offset":0,"chunk":%d}`, startResp.Size)
 	resp, body, err = ctx.SendRequest("GET", ctx.APIPath(dataEndpoint), []byte(reqBody), 30*time.Second)
 	if err != nil {
@@ -107,13 +107,13 @@ func FetchAndSaveData(ctx *ble.APIContext, startEndpoint, dataEndpoint, filename
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	fmt.Printf("Received %d bytes\n", len(body))
+	fmt.Fprintf(os.Stderr, "Received %d bytes\n", len(body))
 
 	// Save to file
 	if err := os.WriteFile(filename, body, 0o644); err != nil {
 		return nil, fmt.Errorf("failed to write file: %w", err)
 	}
-	fmt.Printf("Saved to: %s\n", filename)
+	fmt.Fprintf(os.Stderr, "Saved to: %s\n", filename)
 
 	return body, nil
 }
@@ -134,7 +134,7 @@ func AbortSIFIfRunning(ctx *ble.APIContext) error {
 		if err := json.Unmarshal(body, &statusResp); err == nil {
 			// Only abort if actively in progress (not finished/complete/idle)
 			if statusResp.Status == "inprogress" || statusResp.Status == "ready" || statusResp.Status == "continue" {
-				fmt.Printf("SIF operation in progress (status=%s), aborting...\n", statusResp.Status)
+				fmt.Fprintf(os.Stderr, "SIF operation in progress (status=%s), aborting...\n", statusResp.Status)
 				resp, _, err := ctx.SendRequest("POST", ctx.APIPath("/sif/abort"), nil, 10*time.Second)
 				if err != nil {
 					return fmt.Errorf("failed to abort SIF: %w", err)
@@ -142,7 +142,7 @@ func AbortSIFIfRunning(ctx *ble.APIContext) error {
 				if resp.StatusCode != 200 {
 					return fmt.Errorf("failed to abort SIF: status %d", resp.StatusCode)
 				}
-				fmt.Println("Previous SIF operation aborted")
+				fmt.Fprintln(os.Stderr, "Previous SIF operation aborted")
 				time.Sleep(500 * time.Millisecond)
 			}
 		}
@@ -169,7 +169,7 @@ func CancelXSFPSync(ctx *ble.APIContext) error {
 // ConfirmAction prompts the user to type 'yes' to continue.
 // Returns true if confirmed, false otherwise.
 func ConfirmAction(prompt string) bool {
-	fmt.Print(prompt)
+	fmt.Fprint(os.Stderr, prompt)
 
 	reader := bufio.NewReader(os.Stdin)
 	confirm, _ := reader.ReadString('\n')
