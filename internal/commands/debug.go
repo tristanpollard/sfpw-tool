@@ -389,9 +389,10 @@ func PassCompare(additionalFiles []string) error {
 	fmt.Printf("## Passwords Tried Per Module\n\n")
 	fmt.Printf("This table shows what passwords each firmware version would attempt for each module.\n")
 	fmt.Printf("Lookup algorithm differences:\n")
-	fmt.Printf("- **v1.0.5**: First match only (no verification, silent failures possible)\n")
-	fmt.Printf("- **v1.0.10+**: First match OR brute-force all unique passwords if no match (with verification)\n")
-	fmt.Printf("- **v1.1.3**: All matching entries PLUS brute-force all unique writable passwords (with verification)\n\n")
+	fmt.Printf("- **v1.0.5**: First PN match only (no brute-force, no verification)\n")
+	fmt.Printf("- **v1.0.10, v1.1.0**: First PN match OR brute-force all unique if no match (with marker cell verification)\n")
+	fmt.Printf("- **v1.1.1**: ALL PN matches OR brute-force if no match (with marker cell verification)\n")
+	fmt.Printf("- **v1.1.3+**: ALL PN matches PLUS all unique writable passwords (with marker cell verification)\n\n")
 
 	// Markdown table header
 	fmt.Printf("| Part Number |")
@@ -486,6 +487,29 @@ func collectAllPartNumbers(databases []versionedDB) []string {
 
 // getPasswordsForVersion returns a formatted string of passwords that would be tried
 // for a given part number under the specified firmware version's lookup algorithm.
+//
+// Algorithm analysis from Ghidra reverse engineering across all firmware versions:
+//
+// v1.0.5 (xsfp_unlock_state_machine - monolithic):
+//   - sfp_password_db_lookup_by_partnumber() returns FIRST match only
+//   - No verification - just writes password and waits 500ms
+//   - If PN not found → fails (no brute force)
+//
+// v1.0.10, v1.1.0 (xsfp_unlock_idle_handler + FSM handlers):
+//   - If PN found: use FIRST match only
+//   - If PN NOT found: sfp_collect_unique_passwords() → brute force all unique
+//   - Verification via marker cell write test (XOR 0xFF)
+//
+// v1.1.1 (xsfp_unlock_idle_handler with sfp_collect_entries_by_partnumber):
+//   - sfp_collect_entries_by_partnumber() → ALL entries matching PN
+//   - If count == 0: brute force via sfp_collect_unique_passwords()
+//   - If count >= 1: iterate through ALL matching entries
+//   - Verification via marker cell write test
+//
+// v1.1.3+ (xsfp_state_unlock_enter - full FSM):
+//   - ALWAYS: sfp_collect_unique_passwords(list, PN) + sfp_collect_writable_passwords(list)
+//   - Tries all PN matches THEN all unique writable passwords
+//   - Verification via marker cell write test
 func getPasswordsForVersion(version string, db *firmware.PasswordDatabase, partNum string) string {
 	// Normalize version for comparison
 	v := strings.TrimPrefix(version, "v")
@@ -493,7 +517,7 @@ func getPasswordsForVersion(version string, db *firmware.PasswordDatabase, partN
 	// Get all entries matching this part number
 	matches := db.FindByPartNumber(partNum)
 
-	// Filter out read-only entries
+	// Filter out read-only entries for versions that check this
 	var writableMatches []firmware.PasswordEntry
 	for _, m := range matches {
 		if !m.ReadOnly {
@@ -505,15 +529,16 @@ func getPasswordsForVersion(version string, db *firmware.PasswordDatabase, partN
 	var passwordsToTry [][4]byte
 
 	if isVersion105(v) {
-		// v1.0.5: First match only
+		// v1.0.5: First match only, no brute force fallback
 		if len(writableMatches) > 0 {
 			passwordsToTry = append(passwordsToTry, writableMatches[0].Password)
 		}
+		// If no match, v1.0.5 fails - no passwords to try
 	} else if isVersion113OrLater(v) {
-		// v1.1.3+: All matching entries PLUS all unique writable passwords (brute force)
+		// v1.1.3+: ALL matching entries + ALL unique writable passwords (always)
 		seen := make(map[[4]byte]bool)
 
-		// First, all matching passwords
+		// Phase 1: All entries matching PN
 		for _, m := range writableMatches {
 			if !seen[m.Password] {
 				seen[m.Password] = true
@@ -521,17 +546,17 @@ func getPasswordsForVersion(version string, db *firmware.PasswordDatabase, partN
 			}
 		}
 
-		// Then, all unique passwords from entire database (brute force)
+		// Phase 2: All unique writable passwords from entire database
 		for _, pw := range db.UniquePasswords() {
 			if !seen[pw] {
 				seen[pw] = true
 				passwordsToTry = append(passwordsToTry, pw)
 			}
 		}
-	} else {
-		// v1.0.10, v1.1.0, v1.1.1: First match OR brute force if no match
+	} else if isVersion111(v) {
+		// v1.1.1: ALL matching entries, OR brute force if no match
 		if len(writableMatches) > 0 {
-			// Use matching passwords (deduplicated)
+			// Use ALL matching passwords (deduplicated)
 			seen := make(map[[4]byte]bool)
 			for _, m := range writableMatches {
 				if !seen[m.Password] {
@@ -539,6 +564,15 @@ func getPasswordsForVersion(version string, db *firmware.PasswordDatabase, partN
 					passwordsToTry = append(passwordsToTry, m.Password)
 				}
 			}
+		} else {
+			// No match - brute force all unique passwords
+			passwordsToTry = db.UniquePasswords()
+		}
+	} else {
+		// v1.0.10, v1.1.0: FIRST match only, OR brute force if no match
+		if len(writableMatches) > 0 {
+			// Use first match only
+			passwordsToTry = append(passwordsToTry, writableMatches[0].Password)
 		} else {
 			// No match - brute force all unique passwords
 			passwordsToTry = db.UniquePasswords()
@@ -558,9 +592,14 @@ func getPasswordsForVersion(version string, db *firmware.PasswordDatabase, partN
 	return strings.Join(parts, "<br>")
 }
 
-// isVersion105 checks if this is v1.0.5 (which has different lookup behavior).
+// isVersion105 checks if this is v1.0.5 (simple unlock, no brute force).
 func isVersion105(v string) bool {
 	return v == "1.0.5" || strings.HasPrefix(v, "1.0.5")
+}
+
+// isVersion111 checks if this version is exactly v1.1.1 (ALL PN matches, brute force fallback).
+func isVersion111(v string) bool {
+	return v == "1.1.1" || strings.HasPrefix(v, "1.1.1")
 }
 
 // isVersion113OrLater checks if this version is v1.1.3 or later.
