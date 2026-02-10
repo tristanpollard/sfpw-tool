@@ -293,6 +293,9 @@ func (ctx *APIContext) SendRawBodyRequest(method, path string, body []byte, time
 	config.Debugf("Total packet size: %d bytes", len(dataToSend))
 
 	// Fragment into BLE MTU-sized chunks (244 bytes is typical for BLE 4.2+)
+	// WriteWithoutResponse has no ATT-layer flow control, so the host's HCI
+	// command buffer can fill up under sustained writes.  Retry with backoff
+	// when a write is rejected (commonly ATT error 0x0e "Unlikely Error").
 	const bleMTU = 244
 	for offset := 0; offset < len(dataToSend); offset += bleMTU {
 		end := offset + bleMTU
@@ -301,19 +304,31 @@ func (ctx *APIContext) SendRawBodyRequest(method, path string, body []byte, time
 		}
 		chunk := dataToSend[offset:end]
 
-		config.Debugf("Writing chunk %d-%d (%d bytes)", offset, end, len(chunk))
+		config.Debugf("Writing BLE fragment %d-%d (%d bytes)", offset, end, len(chunk))
 		if config.Verbose {
 			util.PrintHexDump(chunk)
 		}
-		_, err = ctx.WriteChar.WriteWithoutResponse(chunk)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to write chunk at offset %d: %w", offset, err)
+
+		const maxRetries = 5
+		var writeErr error
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			_, writeErr = ctx.WriteChar.WriteWithoutResponse(chunk)
+			if writeErr == nil {
+				break
+			}
+			if attempt < maxRetries {
+				backoff := time.Duration(20*(1<<attempt)) * time.Millisecond // 20, 40, 80, 160, 320ms
+				config.Debugf("BLE write failed (attempt %d/%d), retrying in %v: %v", attempt+1, maxRetries+1, backoff, writeErr)
+				time.Sleep(backoff)
+			}
+		}
+		if writeErr != nil {
+			return nil, nil, fmt.Errorf("failed to write BLE fragment at offset %d after %d attempts: %w", offset, maxRetries+1, writeErr)
 		}
 
-		// Small delay between chunks to let device process
-		if end < len(dataToSend) {
-			time.Sleep(10 * time.Millisecond)
-		}
+		// No inter-fragment delay — rely on retry backoff for flow control
+		// to maximize throughput. If this proves unreliable, add a small
+		// delay here (e.g. 10-20ms).
 	}
 
 	// Wait for response

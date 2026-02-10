@@ -117,8 +117,8 @@ func FirmwareUpdate(device bluetooth.Device, filename string) {
 		progress := float64(offset+len(chunk)) / float64(len(fwData)) * 100
 		fmt.Fprintf(os.Stderr, "\r  Chunk %d/%d: %d-%d bytes (%.1f%%)", chunkNum, totalChunks, offset, end, progress)
 
-		// Small delay between chunks
-		time.Sleep(20 * time.Millisecond)
+		// No inter-chunk delay — rely on retry backoff in SendRawBodyRequest
+		// for flow control. If this proves unreliable, add a delay here.
 	}
 	fmt.Fprintln(os.Stderr)
 

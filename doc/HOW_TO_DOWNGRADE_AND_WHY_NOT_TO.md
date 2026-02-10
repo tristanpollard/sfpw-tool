@@ -6,6 +6,12 @@ Based on reverse engineering, it appears that firmware v1.0.5 had a bug that may
 
 If this analysis is correct, downgrading won't fix your module - it will just hide the failure.
 
+It appears that:
+- The firmware team is significantly ahead of the mobile team on features.
+- They're actively working to make the device more likely to be able to write various modules with each version so far.
+- The support team is for whatever reason not able to communicate effectively about status and goals.
+- As far as I can tell, noone is providing actionable information on the forums (see below).
+
 ---
 
 ## How to Downgrade
@@ -25,7 +31,7 @@ sfpw-tool fw update /path/to/firmware-1.0.5.bin
 
 There's a growing sentiment that Ubiquiti has "nerfed" the SFP-Wizard over time - that modules which used to work no longer do after firmware updates.
 
-After reverse engineering firmware versions 1.0.5 through 1.1.3, my analysis suggests this may not be what's actually happening. The evidence points toward a different explanation: older firmware may have been broken in a way that made failures invisible.
+After reverse engineering firmware versions v1.0.5 through v1.1.3, my analysis suggests this may not be what's actually happening. The evidence points toward a different explanation: older firmware may have been broken in a way that made failures invisible.
 
 ---
 

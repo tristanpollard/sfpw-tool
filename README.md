@@ -4,6 +4,9 @@ A command-line tool for interacting with the Ubiquiti SFP Wizard (UACC-SFP-Wizar
 
 The SFP Wizard is a portable device for reading, writing, and cloning SFP/SFP+/SFP28 module EEPROMs. sfpw-tool provides full control over the device from Linux, macOS, and other platforms supported by TinyGo's bluetooth library.
 
+> [!NOTE]
+> If you upgraded your SFP-Wizard and think it's gotten worse, please see [How to Downgrade Your SFP-Wizard to v1.0.5 (And Why Not To)](doc/HOW_TO_DOWNGRADE_AND_WHY_NOT_TO.md) for some possibly interesting notes about what appears to have happened between v1.0.5 and v1.1.3.
+
 > [!CAUTION]
 > **This is a reverse-engineered third-party client.** I take no responsibility for dead SFP Wizards, bricked SFP modules, or exploded computers. If it breaks, you get to keep all the pieces.
 
@@ -177,6 +180,3 @@ $ sfpw-tool debug parse-eeprom module.bin
 
 > [!NOTE]
 > I do not own any QSFP modules and have not been able to test QSFP functionality.
-
-> [!NOTE]
-> I'm looking for firmware versions older than v1.0.10. If anyone has torn open a device and extracted an older firmware physically, please get in touch!
