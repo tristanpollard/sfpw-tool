@@ -308,7 +308,7 @@ This would help confirm or refute the silent failure hypothesis.
 
 ## Further Reading
 
-- [API.md](../API.md) — Protocol documentation including password database internals
+- [API.md](API.md) — Protocol documentation including password database internals
 - [sfpw-tool](../) — CLI tool for SFP-Wizard interaction and firmware analysis
 
 ---
