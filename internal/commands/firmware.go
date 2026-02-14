@@ -97,10 +97,7 @@ func FirmwareUpdate(device bluetooth.Device, filename string) {
 
 	totalChunks := (len(fwData) + chunkSize - 1) / chunkSize
 	for offset := 0; offset < len(fwData); offset += chunkSize {
-		end := offset + chunkSize
-		if end > len(fwData) {
-			end = len(fwData)
-		}
+		end := min(offset+chunkSize, len(fwData))
 		chunk := fwData[offset:end]
 		chunkNum := (offset / chunkSize) + 1
 

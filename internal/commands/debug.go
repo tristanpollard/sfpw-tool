@@ -301,10 +301,7 @@ func RawAPI(device bluetooth.Device, method, path, body string) {
 	} else {
 		// Binary data - hex dump
 		for i := 0; i < len(respBody); i += 16 {
-			end := i + 16
-			if end > len(respBody) {
-				end = len(respBody)
-			}
+			end := min(i+16, len(respBody))
 			fmt.Printf("  %04x: % x\n", i, respBody[i:end])
 		}
 	}
@@ -435,8 +432,8 @@ func extractVersionFromPath(path string) string {
 
 	// Strip common prefixes
 	for _, prefix := range []string{"sfpw_v", "sfpw_", "ESP32-", "firmware-v", "firmware-", "fw-", "v"} {
-		if strings.HasPrefix(name, prefix) {
-			name = strings.TrimPrefix(name, prefix)
+		if after, ok := strings.CutPrefix(name, prefix); ok {
+			name = after
 			break
 		}
 	}

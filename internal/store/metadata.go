@@ -7,16 +7,16 @@ import (
 
 // Metadata contains parsed information about a module profile.
 type Metadata struct {
-	ContentHash string     `json:"content_hash"`
-	ModuleType  string     `json:"module_type"` // "SFP", "QSFP", "QSFP+", "QSFP28"
-	Size        int        `json:"size"`
-	Identity    Identity   `json:"identity"`
-	Specs       Specs      `json:"specs,omitempty"`
-	Compliance  []string   `json:"compliance,omitempty"`
-	Checksums   Checksums  `json:"checksums,omitempty"`
-	Sources     []Source   `json:"sources"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ContentHash string    `json:"content_hash"`
+	ModuleType  string    `json:"module_type"` // "SFP", "QSFP", "QSFP+", "QSFP28"
+	Size        int       `json:"size"`
+	Identity    Identity  `json:"identity"`
+	Specs       Specs     `json:"specs"`
+	Compliance  []string  `json:"compliance,omitempty"`
+	Checksums   Checksums `json:"checksums"`
+	Sources     []Source  `json:"sources"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // Identity contains vendor and serial information.
@@ -31,11 +31,11 @@ type Identity struct {
 
 // Specs contains module specifications.
 type Specs struct {
-	ConnectorType string  `json:"connector_type,omitempty"`
-	WavelengthNM  int     `json:"wavelength_nm,omitempty"`
-	BitrateMbps   int     `json:"bitrate_mbps,omitempty"`
-	Encoding      string  `json:"encoding,omitempty"`
-	LinkLengthM   int     `json:"link_length_m,omitempty"`
+	ConnectorType string `json:"connector_type,omitempty"`
+	WavelengthNM  int    `json:"wavelength_nm,omitempty"`
+	BitrateMbps   int    `json:"bitrate_mbps,omitempty"`
+	Encoding      string `json:"encoding,omitempty"`
+	LinkLengthM   int    `json:"link_length_m,omitempty"`
 }
 
 // Checksums contains checksum validation results.

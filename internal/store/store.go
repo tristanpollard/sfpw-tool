@@ -11,16 +11,16 @@ import (
 
 // Store manages a content-addressable collection of module EEPROM profiles.
 type Store struct {
-	baseDir      string
-	profilesDir  string
-	metadataDir  string
-	indexPath    string
+	baseDir     string
+	profilesDir string
+	metadataDir string
+	indexPath   string
 }
 
 // Index contains quick lookup information for all profiles.
 type Index struct {
-	Profiles map[string]IndexEntry `json:"profiles"` // hash -> entry
-	UpdatedAt time.Time            `json:"updated_at"`
+	Profiles  map[string]IndexEntry `json:"profiles"` // hash -> entry
+	UpdatedAt time.Time             `json:"updated_at"`
 }
 
 // IndexEntry contains summary info for quick listing.
@@ -166,7 +166,6 @@ func (s *Store) List() ([]IndexEntry, error) {
 
 	entries := make([]IndexEntry, 0, len(index.Profiles))
 	for hash, entry := range index.Profiles {
-		entry := entry // copy
 		// Store hash in a field we can access (we'll use the map key)
 		entries = append(entries, entry)
 		_ = hash // hash is available via map iteration if needed

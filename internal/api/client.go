@@ -249,10 +249,7 @@ func (c *Client) UpdateFirmware(data []byte, progress FirmwareProgressCallback) 
 	// Step 2: Send firmware data in chunks
 	totalSize := int64(len(data))
 	for offset := 0; offset < len(data); offset += chunkSize {
-		end := offset + chunkSize
-		if end > len(data) {
-			end = len(data)
-		}
+		end := min(offset+chunkSize, len(data))
 		chunk := data[offset:end]
 
 		resp, body, err := c.Send("POST", "/fw/data", chunk, &RequestOptions{
@@ -317,10 +314,7 @@ func (c *Client) UpdateFirmwareCtx(ctx context.Context, data []byte, progress Fi
 			return err
 		}
 
-		end := offset + chunkSize
-		if end > len(data) {
-			end = len(data)
-		}
+		end := min(offset+chunkSize, len(data))
 		chunk := data[offset:end]
 
 		resp, body, err := c.Send("POST", "/fw/data", chunk, &RequestOptions{

@@ -105,13 +105,13 @@ type Model struct {
 	selectedFwSHA256  string
 
 	// Firmware flash progress
-	fwFlashing             bool
-	fwFlashPhase           string // "uploading", "installing", "cancelling", "complete", "error"
-	fwFlashProgress        float64
-	fwFlashError           string
-	fwFlashRebootPending   bool                // true when device disconnected during install (expected reboot)
-	progressChan           chan tea.Msg         // streams progress from firmware flash goroutine
-	cancelFlash            context.CancelFunc  // cancels firmware flash context
+	fwFlashing           bool
+	fwFlashPhase         string // "uploading", "installing", "cancelling", "complete", "error"
+	fwFlashProgress      float64
+	fwFlashError         string
+	fwFlashRebootPending bool               // true when device disconnected during install (expected reboot)
+	progressChan         chan tea.Msg       // streams progress from firmware flash goroutine
+	cancelFlash          context.CancelFunc // cancels firmware flash context
 
 	// File picker state
 	filepicker       filepicker.Model
@@ -1043,10 +1043,7 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 			m.fwFlashError = ""
 			m.statusMsg = ""
 			// Reset cursor if it's beyond the new menu length
-			newMax := len(m.getFirmwareMenuItems()) - 1
-			if newMax < 0 {
-				newMax = 0
-			}
+			newMax := max(len(m.getFirmwareMenuItems())-1, 0)
 			if m.cursor > newMax {
 				m.cursor = newMax
 			}
@@ -1751,13 +1748,11 @@ func (m Model) viewFirmwareFlashing() string {
 	b.WriteString("\n\n")
 
 	// Progress bar — use most of the terminal width
-	barWidth := m.width - 6 // leave some margin
-	if barWidth < 20 {
-		barWidth = 20
-	}
-	if barWidth > 80 {
-		barWidth = 80
-	}
+	barWidth := min(
+		// leave some margin
+		max(
+
+			m.width-6, 20), 80)
 	bar := progress.New(progress.WithDefaultGradient(), progress.WithWidth(barWidth))
 	b.WriteString("  ")
 	b.WriteString(bar.ViewAs(m.fwFlashProgress))

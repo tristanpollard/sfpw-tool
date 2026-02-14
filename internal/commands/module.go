@@ -212,10 +212,7 @@ func DDM(device bluetooth.Device) {
 			// Binary data - show hex dump
 			fmt.Fprintf(os.Stderr, "Body (hex):\n")
 			for i := 0; i < len(body); i += 16 {
-				end := i + 16
-				if end > len(body) {
-					end = len(body)
-				}
+				end := min(i+16, len(body))
 				fmt.Printf("%04x: % x\n", i, body[i:end])
 			}
 		}

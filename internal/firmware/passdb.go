@@ -2,6 +2,7 @@ package firmware
 
 import (
 	"fmt"
+	"strings"
 )
 
 // PasswordEntry represents an entry in the SFP password database.
@@ -367,12 +368,12 @@ func (e *PasswordEntry) InterpretFlags() string {
 		return fmt.Sprintf("0x%02x", e.Flags[0])
 	}
 
-	result := ""
+	var result strings.Builder
 	for i, p := range pages {
 		if i > 0 {
-			result += "+"
+			result.WriteString("+")
 		}
-		result += p
+		result.WriteString(p)
 	}
-	return result
+	return result.String()
 }

@@ -19,7 +19,7 @@ func PrintHexDump(data []byte) {
 		fmt.Printf("%04x  ", i)
 
 		// Hex bytes
-		for j := 0; j < 16; j++ {
+		for j := range 16 {
 			if i+j < len(data) {
 				fmt.Printf("%02x ", data[i+j])
 			} else {

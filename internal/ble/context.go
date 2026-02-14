@@ -298,10 +298,7 @@ func (ctx *APIContext) SendRawBodyRequest(method, path string, body []byte, time
 	// when a write is rejected (commonly ATT error 0x0e "Unlikely Error").
 	const bleMTU = 244
 	for offset := 0; offset < len(dataToSend); offset += bleMTU {
-		end := offset + bleMTU
-		if end > len(dataToSend) {
-			end = len(dataToSend)
-		}
+		end := min(offset+bleMTU, len(dataToSend))
 		chunk := dataToSend[offset:end]
 
 		config.Debugf("Writing BLE fragment %d-%d (%d bytes)", offset, end, len(chunk))
