@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -103,10 +105,13 @@ type Model struct {
 	selectedFwSHA256  string
 
 	// Firmware flash progress
-	fwFlashing      bool
-	fwFlashPhase    string // "uploading", "installing", "complete", "error"
-	fwFlashProgress float64
-	fwFlashError    string
+	fwFlashing             bool
+	fwFlashPhase           string // "uploading", "installing", "cancelling", "complete", "error"
+	fwFlashProgress        float64
+	fwFlashError           string
+	fwFlashRebootPending   bool                // true when device disconnected during install (expected reboot)
+	progressChan           chan tea.Msg         // streams progress from firmware flash goroutine
+	cancelFlash            context.CancelFunc  // cancels firmware flash context
 
 	// File picker state
 	filepicker       filepicker.Model
@@ -258,6 +263,9 @@ type firmwareFlashCompleteMsg struct {
 	err     error
 }
 
+// fwRebootReconnectMsg triggers auto-reconnect after firmware reboot.
+type fwRebootReconnectMsg time.Time
+
 // NewModel creates a new TUI model.
 func NewModel() Model {
 	h := help.New()
@@ -403,10 +411,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanResultMsg:
 		m.searching = false
 		if msg.err != nil {
+			if m.fwFlashRebootPending {
+				// Device may still be rebooting, retry
+				m.statusMsg = "Device still rebooting, retrying..."
+				return m, fwRebootReconnectCmd()
+			}
 			m.errorMsg = fmt.Sprintf("Scan failed: %v", msg.err)
 			return m, nil
 		}
 		if msg.device == nil {
+			if m.fwFlashRebootPending {
+				m.statusMsg = "Device still rebooting, retrying..."
+				return m, fwRebootReconnectCmd()
+			}
 			m.errorMsg = "Device not found"
 			return m, nil
 		}
@@ -418,23 +435,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connectMsg:
 		m.connecting = false
 		if msg.err != nil {
+			if m.fwFlashRebootPending {
+				// Device may still be rebooting, retry
+				m.statusMsg = "Reconnect failed, retrying..."
+				return m, fwRebootReconnectCmd()
+			}
 			m.errorMsg = fmt.Sprintf("Connection failed: %v", msg.err)
 			return m, nil
 		}
 		m.connected = true
 		m.client = msg.client
 		m.deviceMAC = msg.mac
-		m.statusMsg = "Connected"
 		m.errorMsg = ""
 		m.loading = true
 		m.connectionCheckFails = 0
-		// Fetch device info first, stats will be fetched after
-		// Also start connection health check
-		return m, tea.Batch(
+
+		cmds := []tea.Cmd{
 			fetchDeviceInfoCmd(m.client),
 			connectionCheckCmd(),
 			m.spinner.Tick,
-		)
+		}
+
+		if m.fwFlashRebootPending {
+			m.fwFlashRebootPending = false
+			m.view = ViewFirmware
+			m.statusMsg = "Firmware update complete!"
+			m.fwFlashPhase = ""
+			// Fetch firmware status to show new version
+			cmds = append(cmds, fetchFirmwareCmd(m.client))
+		} else {
+			m.statusMsg = "Connected"
+		}
+
+		return m, tea.Batch(cmds...)
 
 	case statsMsg:
 		m.loading = false
@@ -650,6 +683,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fwRebootReconnectMsg:
+		// Auto-reconnect after firmware reboot
+		if !m.connected && m.fwFlashRebootPending && !m.searching && !m.connecting {
+			m.searching = true
+			return m, scanForDeviceCmd
+		}
+		return m, nil
+
 	case firmwareImportedMsg:
 		if msg.err != nil {
 			m.availableFwError = fmt.Sprintf("Failed to import file: %v", msg.err)
@@ -679,10 +720,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case firmwareFlashProgressMsg:
 		m.fwFlashPhase = msg.phase
 		m.fwFlashProgress = msg.progress
+		// Re-subscribe to get the next progress message from the channel
+		if m.progressChan != nil {
+			return m, waitForProgressMsg(m.progressChan)
+		}
 		return m, nil
 
 	case firmwareFlashCompleteMsg:
+		// If disconnect already handled this as firmware reboot, ignore the late message
+		if m.fwFlashRebootPending || (!m.fwFlashing && m.fwFlashPhase == "complete") {
+			return m, nil
+		}
 		m.fwFlashing = false
+		m.progressChan = nil
+		m.cancelFlash = nil
 		if msg.err != nil {
 			m.fwFlashPhase = "error"
 			m.fwFlashError = msg.err.Error()
@@ -700,6 +751,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleDisconnect handles device disconnection.
 func (m Model) handleDisconnect() (tea.Model, tea.Cmd) {
+	// Check if firmware install was in progress — disconnect during install
+	// is expected because the device reboots after applying firmware.
+	fwReboot := m.fwFlashing && m.fwFlashPhase == "installing"
+
 	m.connected = false
 	m.connecting = false
 	m.searching = false
@@ -716,6 +771,23 @@ func (m Model) handleDisconnect() (tea.Model, tea.Cmd) {
 	m.moduleLoading = false
 	m.moduleInfoLoading = false
 	// Stop any in-progress firmware flash
+	if m.cancelFlash != nil {
+		m.cancelFlash()
+		m.cancelFlash = nil
+	}
+	m.progressChan = nil
+
+	if fwReboot {
+		// Firmware install was in progress — device is rebooting, not an error
+		m.fwFlashing = false
+		m.fwFlashPhase = "complete"
+		m.fwFlashError = ""
+		m.fwFlashRebootPending = true
+		m.errorMsg = ""
+		m.statusMsg = "Firmware uploaded! Device is rebooting..."
+		return m, fwRebootReconnectCmd()
+	}
+
 	if m.fwFlashing {
 		m.fwFlashing = false
 		m.fwFlashError = "Device disconnected during flash"
@@ -726,6 +798,16 @@ func (m Model) handleDisconnect() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Intercept keys during firmware flash: only allow ESC to cancel
+	if m.fwFlashing && m.cancelFlash != nil {
+		if key.Matches(msg, m.keys.Back) || key.Matches(msg, m.keys.Quit) {
+			m.cancelFlash()
+			m.fwFlashPhase = "cancelling"
+			return m, nil // complete msg will arrive via channel
+		}
+		return m, nil // swallow all other keys during flash
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		if m.view == ViewMain {
@@ -939,12 +1021,18 @@ func (m Model) handleSelect() (tea.Model, tea.Cmd) {
 				m.availableFwError = "Not connected to device"
 				return m, nil
 			}
+			ch := make(chan tea.Msg, 4)
+			ctx, cancel := context.WithCancel(context.Background())
+			m.progressChan = ch
+			m.cancelFlash = cancel
 			m.fwFlashing = true
 			m.fwFlashPhase = "uploading"
+			m.fwFlashProgress = 0
 			m.fwFlashError = ""
 			m.statusMsg = ""
 			return m, tea.Batch(
-				flashFirmwareCmd(m.client, m.selectedFwPath),
+				flashFirmwareCmd(m.client, m.selectedFwPath, ch, ctx),
+				waitForProgressMsg(ch),
 				m.spinner.Tick,
 			)
 		case "Clear Selection":
@@ -1515,6 +1603,11 @@ func (m Model) viewFirmware() string {
 	b.WriteString(m.renderTitleBar("Firmware"))
 	b.WriteString("\n\n")
 
+	// Dedicated full-screen progress view during flashing
+	if m.fwFlashing {
+		return m.viewFirmwareFlashing()
+	}
+
 	// Show sync progress if syncing
 	if m.fwSyncing {
 		b.WriteString(m.styles.Highlight.Render("Syncing Firmware Cache"))
@@ -1554,12 +1647,7 @@ func (m Model) viewFirmware() string {
 	b.WriteString(m.styles.Highlight.Render("Selected Version"))
 	b.WriteString("\n")
 
-	if m.fwFlashing {
-		b.WriteString("  ")
-		b.WriteString(m.spinner.View())
-		b.WriteString(fmt.Sprintf(" %s...", m.fwFlashPhase))
-		b.WriteString("\n")
-	} else if m.fwFlashError != "" {
+	if m.fwFlashError != "" {
 		b.WriteString(m.styles.Error.Render("  Error: " + m.fwFlashError))
 		b.WriteString("\n")
 	} else if m.selectedFwVersion != "" {
@@ -1619,6 +1707,65 @@ func (m Model) viewFirmware() string {
 		b.WriteString(m.styles.Success.Render(m.statusMsg))
 		b.WriteString("\n")
 	}
+
+	return b.String()
+}
+
+// viewFirmwareFlashing renders a dedicated full-screen progress view during firmware flash.
+func (m Model) viewFirmwareFlashing() string {
+	var b strings.Builder
+
+	// Title bar (same header as normal view)
+	b.WriteString(m.renderTitleBar("Firmware Update"))
+	b.WriteString("\n\n")
+
+	// Version info: from → to
+	fromVersion := "unknown"
+	if m.firmware != nil {
+		fromVersion = "v" + m.firmware.FWVersion
+	}
+	toVersion := m.selectedFwVersion
+	if toVersion == "" {
+		toVersion = "unknown"
+	}
+
+	b.WriteString("  " + m.styles.Highlight.Render(fromVersion) +
+		m.styles.Muted.Render(" → ") +
+		m.styles.Highlight.Render(toVersion))
+	b.WriteString("\n\n")
+
+	// Phase and percentage
+	phaseDisplay := m.fwFlashPhase
+	switch phaseDisplay {
+	case "uploading":
+		phaseDisplay = "Uploading firmware"
+	case "installing":
+		phaseDisplay = "Installing firmware"
+	case "cancelling":
+		phaseDisplay = "Cancelling"
+	}
+
+	b.WriteString("  ")
+	b.WriteString(m.spinner.View())
+	b.WriteString(fmt.Sprintf(" %s... %.0f%%", phaseDisplay, m.fwFlashProgress*100))
+	b.WriteString("\n\n")
+
+	// Progress bar — use most of the terminal width
+	barWidth := m.width - 6 // leave some margin
+	if barWidth < 20 {
+		barWidth = 20
+	}
+	if barWidth > 80 {
+		barWidth = 80
+	}
+	bar := progress.New(progress.WithDefaultGradient(), progress.WithWidth(barWidth))
+	b.WriteString("  ")
+	b.WriteString(bar.ViewAs(m.fwFlashProgress))
+	b.WriteString("\n\n")
+
+	// Hint
+	b.WriteString(m.styles.Muted.Render("  ESC to cancel"))
+	b.WriteString("\n")
 
 	return b.String()
 }
@@ -1873,6 +2020,13 @@ func connectionCheckCmd() tea.Cmd {
 	})
 }
 
+// fwRebootReconnectCmd waits for the device to reboot then triggers reconnect.
+func fwRebootReconnectCmd() tea.Cmd {
+	return tea.Tick(8*time.Second, func(t time.Time) tea.Msg {
+		return fwRebootReconnectMsg(t)
+	})
+}
+
 // fetchAvailableFirmwareCmd fetches available firmware versions from the cloud.
 func fetchAvailableFirmwareCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -2020,29 +2174,104 @@ func downloadFirmwareCmd(fw firmware.FirmwareVersion) tea.Cmd {
 	}
 }
 
-// flashFirmwareCmd flashes firmware to the device.
-func flashFirmwareCmd(client *api.Client, path string) tea.Cmd {
+// waitForProgressMsg drains one message from the progress channel.
+// Standard Bubbletea channel-drain pattern for streaming messages from a goroutine.
+func waitForProgressMsg(ch <-chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
+		msg, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return msg
+	}
+}
+
+// flashFirmwareCmd flashes firmware to the device with real-time progress.
+// Progress messages are sent through ch; the goroutine respects ctx for cancellation.
+func flashFirmwareCmd(client *api.Client, path string, ch chan<- tea.Msg, ctx context.Context) tea.Cmd {
+	return func() tea.Msg {
+		// send delivers a progress message, respecting cancellation.
+		// IMPORTANT: Do NOT use this for the final firmwareFlashCompleteMsg
+		// after cancellation — ctx.Done() is already closed so select may
+		// drop the message. Use forceSend instead.
+		send := func(msg tea.Msg) {
+			select {
+			case ch <- msg:
+			case <-ctx.Done():
+			}
+		}
+
+		// forceSend delivers a message regardless of context state.
+		// Used for the final complete message that must always be delivered.
+		forceSend := func(msg tea.Msg) {
+			ch <- msg
+		}
+
 		if client == nil {
-			return firmwareFlashCompleteMsg{err: fmt.Errorf("not connected")}
+			forceSend(firmwareFlashCompleteMsg{err: fmt.Errorf("not connected")})
+			close(ch)
+			return nil
 		}
 
 		// Read firmware file
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return firmwareFlashCompleteMsg{err: fmt.Errorf("failed to read file: %w", err)}
+			forceSend(firmwareFlashCompleteMsg{err: fmt.Errorf("failed to read file: %w", err)})
+			close(ch)
+			return nil
 		}
 
-		// Use the client to update firmware (no progress callback for simplicity)
-		err = client.UpdateFirmware(data, nil)
+		// Upload firmware with progress
+		err = client.UpdateFirmwareCtx(ctx, data, func(phase string, current, total int64) {
+			send(firmwareFlashProgressMsg{
+				phase:    phase,
+				progress: float64(current) / float64(total),
+			})
+		})
 		if err != nil {
-			return firmwareFlashCompleteMsg{err: err}
+			// If cancelled, abort on device
+			if ctx.Err() != nil {
+				client.AbortFirmwareUpdate()
+				forceSend(firmwareFlashCompleteMsg{err: fmt.Errorf("cancelled")})
+				close(ch)
+				return nil
+			}
+			forceSend(firmwareFlashCompleteMsg{err: err})
+			close(ch)
+			return nil
 		}
 
-		return firmwareFlashCompleteMsg{
-			success: true,
-			message: "Firmware update complete! Device may reboot.",
+		// Upload done, now monitor installation
+		send(firmwareFlashProgressMsg{phase: "installing", progress: 0})
+
+		status, err := client.MonitorFirmwareInstall(ctx, 2*time.Second, func(s api.FirmwareStatus) {
+			p := float64(s.ProgressPercent) / 100.0
+			send(firmwareFlashProgressMsg{phase: "installing", progress: p})
+		})
+		if err != nil {
+			// If cancelled, abort on device
+			if ctx.Err() != nil {
+				client.AbortFirmwareUpdate()
+				forceSend(firmwareFlashCompleteMsg{err: fmt.Errorf("cancelled")})
+				close(ch)
+				return nil
+			}
+			forceSend(firmwareFlashCompleteMsg{err: err})
+			close(ch)
+			return nil
 		}
+
+		// BLE errors during install monitoring are treated as success (device rebooting)
+		msg := "Firmware update complete! Device may reboot."
+		if status != nil && status.FWVersion != "" {
+			msg = fmt.Sprintf("Firmware update complete! Version: v%s", status.FWVersion)
+		}
+		forceSend(firmwareFlashCompleteMsg{
+			success: true,
+			message: msg,
+		})
+		close(ch)
+		return nil
 	}
 }
 

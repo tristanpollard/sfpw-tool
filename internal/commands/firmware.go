@@ -130,9 +130,8 @@ func FirmwareUpdate(device bluetooth.Device, filename string) {
 
 		status, err := getFirmwareStatus(ctx)
 		if err != nil {
-			// Connection may drop during update - that's often expected
-			fmt.Fprintf(os.Stderr, "Status check failed (connection may have dropped): %v\n", err)
-			fmt.Fprintln(os.Stderr, "The device may be rebooting. Please check device status manually.")
+			// Device reboots after install — disconnect is expected
+			fmt.Fprintln(os.Stderr, "\nFirmware uploaded successfully. Device is rebooting.")
 			return
 		}
 
