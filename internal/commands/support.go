@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vitaminmoo/sfpw-tool/internal/ble"
-	"github.com/vitaminmoo/sfpw-tool/internal/eeprom"
+	"github.com/tristanpollard/sfpw-tool/internal/ble"
+	"github.com/tristanpollard/sfpw-tool/internal/eeprom"
 
 	"tinygo.org/x/bluetooth"
 )

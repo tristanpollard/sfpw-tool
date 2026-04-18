@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/vitaminmoo/sfpw-tool/internal/config"
-	"github.com/vitaminmoo/sfpw-tool/internal/protocol"
+	"github.com/tristanpollard/sfpw-tool/internal/config"
+	"github.com/tristanpollard/sfpw-tool/internal/protocol"
 
 	"tinygo.org/x/bluetooth"
 )

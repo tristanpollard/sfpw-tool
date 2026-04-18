@@ -18,9 +18,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"tinygo.org/x/bluetooth"
 
-	"github.com/vitaminmoo/sfpw-tool/internal/api"
-	"github.com/vitaminmoo/sfpw-tool/internal/firmware"
-	"github.com/vitaminmoo/sfpw-tool/internal/store"
+	"github.com/tristanpollard/sfpw-tool/internal/api"
+	"github.com/tristanpollard/sfpw-tool/internal/firmware"
+	"github.com/tristanpollard/sfpw-tool/internal/store"
 )
 
 // View represents different screens in the TUI.

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vitaminmoo/sfpw-tool/internal/ble"
-	"github.com/vitaminmoo/sfpw-tool/internal/protocol"
+	"github.com/tristanpollard/sfpw-tool/internal/ble"
+	"github.com/tristanpollard/sfpw-tool/internal/protocol"
 
 	"tinygo.org/x/bluetooth"
 )

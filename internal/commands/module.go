@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/vitaminmoo/sfpw-tool/internal/ble"
-	"github.com/vitaminmoo/sfpw-tool/internal/store"
+	"github.com/tristanpollard/sfpw-tool/internal/ble"
+	"github.com/tristanpollard/sfpw-tool/internal/store"
 
 	"tinygo.org/x/bluetooth"
 )

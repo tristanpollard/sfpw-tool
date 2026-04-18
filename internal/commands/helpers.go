@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vitaminmoo/sfpw-tool/internal/ble"
+	"github.com/tristanpollard/sfpw-tool/internal/ble"
 
 	"tinygo.org/x/bluetooth"
 )

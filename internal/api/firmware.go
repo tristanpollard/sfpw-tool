@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vitaminmoo/sfpw-tool/internal/config"
+	"github.com/tristanpollard/sfpw-tool/internal/config"
 )
 
 // FirmwareStartResponse represents the response from POST /fw/start.

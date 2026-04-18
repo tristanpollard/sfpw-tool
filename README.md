@@ -22,7 +22,7 @@ The SFP Wizard is a portable device for reading, writing, and cloning SFP/SFP+/S
 ## Installation
 
 ```bash
-go install github.com/vitaminmoo/sfpw-tool@latest
+go install github.com/tristanpollard/sfpw-tool@latest
 ```
 
 ## Usage

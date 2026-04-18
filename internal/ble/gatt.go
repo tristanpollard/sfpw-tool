@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vitaminmoo/sfpw-tool/internal/config"
+	"github.com/tristanpollard/sfpw-tool/internal/config"
 
 	"tinygo.org/x/bluetooth"
 )
